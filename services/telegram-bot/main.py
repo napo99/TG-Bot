@@ -117,6 +117,22 @@ class TelegramBot:
             await update.message.reply_text("❌ Unauthorized access")
             return
         
+        # Set up bot commands for menu (one-time setup)
+        try:
+            commands = [
+                BotCommand("start", "🚀 Start the bot and see help"),
+                BotCommand("help", "📋 Show available commands"),
+                BotCommand("price", "💰 Get spot + perp prices (e.g., /price BTC-USDT)"),
+                BotCommand("top10", "🏆 Top 10 markets (/top10 spot or /top10 perps)"),
+                BotCommand("balance", "💳 Show account balance"),
+                BotCommand("positions", "📊 Show open positions"),
+                BotCommand("pnl", "📈 Show P&L summary"),
+            ]
+            await context.bot.set_my_commands(commands)
+            logger.info("Bot commands registered")
+        except Exception as e:
+            logger.warning(f"Could not set bot commands: {e}")
+        
         welcome_text = """
 🚀 **Crypto Trading Assistant**
 
@@ -401,35 +417,10 @@ def main():
     # Add error handler
     application.add_error_handler(bot.error_handler)
     
-    # Set up bot commands for Telegram menu
-    async def set_bot_commands():
-        commands = [
-            BotCommand("start", "🚀 Start the bot and see help"),
-            BotCommand("help", "📋 Show available commands"),
-            BotCommand("price", "💰 Get spot + perp prices (e.g., /price BTC-USDT)"),
-            BotCommand("top10", "🏆 Top 10 markets (/top10 spot or /top10 perps)"),
-            BotCommand("balance", "💳 Show account balance"),
-            BotCommand("positions", "📊 Show open positions"),
-            BotCommand("pnl", "📈 Show P&L summary"),
-        ]
-        await application.bot.set_my_commands(commands)
-        logger.info("Bot commands registered")
-    
     logger.info("Starting Telegram bot...")
     
-    # Set bot commands and run
-    async def run_bot():
-        await application.initialize()
-        await set_bot_commands()
-        await application.start()
-        await application.updater.start_polling(drop_pending_updates=True)
-        await application.updater.idle()
-        await application.stop()
-        await application.shutdown()
-    
-    # Run the bot
-    import asyncio
-    asyncio.run(run_bot())
+    # Run the bot using the standard method (commands will be set after first start)
+    application.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
