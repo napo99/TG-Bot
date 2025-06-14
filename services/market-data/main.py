@@ -34,18 +34,27 @@ class ExchangeManager:
         self._init_exchanges()
     
     def _init_exchanges(self):
-        # Binance
+        # Always add Binance for public data (no API keys needed for price data)
+        self.exchanges['binance'] = ccxt.binance({
+            'enableRateLimit': True,
+        })
+        
+        # Add authenticated exchanges if API keys are provided
         if os.getenv('BINANCE_API_KEY'):
-            self.exchanges['binance'] = ccxt.binance({
+            self.exchanges['binance_auth'] = ccxt.binance({
                 'apiKey': os.getenv('BINANCE_API_KEY'),
                 'secret': os.getenv('BINANCE_SECRET_KEY'),
                 'sandbox': os.getenv('BINANCE_TESTNET', 'false').lower() == 'true',
                 'enableRateLimit': True,
             })
         
-        # Bybit
+        # Bybit public data
+        self.exchanges['bybit'] = ccxt.bybit({
+            'enableRateLimit': True,
+        })
+        
         if os.getenv('BYBIT_API_KEY'):
-            self.exchanges['bybit'] = ccxt.bybit({
+            self.exchanges['bybit_auth'] = ccxt.bybit({
                 'apiKey': os.getenv('BYBIT_API_KEY'),
                 'secret': os.getenv('BYBIT_SECRET_KEY'),
                 'sandbox': os.getenv('BYBIT_TESTNET', 'false').lower() == 'true',
@@ -65,7 +74,7 @@ class ExchangeManager:
                 raise ValueError(f"Exchange {exchange} not configured")
             
             ex = self.exchanges[exchange]
-            ticker = await ex.fetch_ticker(symbol)
+            ticker = ex.fetch_ticker(symbol)
             
             return PriceData(
                 symbol=symbol,
@@ -88,7 +97,7 @@ class ExchangeManager:
                 raise ValueError(f"Exchange {exchange} not configured")
             
             ex = self.exchanges[exchange]
-            balance = await ex.fetch_balance()
+            balance = ex.fetch_balance()
             
             # Return only non-zero balances
             return {
@@ -110,7 +119,7 @@ class ExchangeManager:
                 raise ValueError(f"Exchange {exchange} not configured")
             
             ex = self.exchanges[exchange]
-            positions = await ex.fetch_positions()
+            positions = ex.fetch_positions()
             
             # Filter only open positions
             open_positions = []
@@ -268,7 +277,10 @@ async def create_app():
     
     return app
 
-if __name__ == "__main__":
+async def main():
     logger.info("Starting Market Data Service...")
-    app = create_app()
-    web.run_app(app, host='0.0.0.0', port=8001)
+    app = await create_app()
+    return app
+
+if __name__ == "__main__":
+    web.run_app(main(), host='0.0.0.0', port=8001)
