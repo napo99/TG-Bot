@@ -1,0 +1,82 @@
+# Environment variables and secrets
+.env
+.env.local
+.env.production
+.env.development
+
+# API Keys and sensitive data
+config/secrets/
+*.key
+*.pem
+*.p12
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+data/
+
+# Logs
+logs/
+*.log
+log/
+
+# Docker
+.docker/
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Runtime
+*.pid
+.coverage
+.pytest_cache/
+.tox/
+
+# Backup files
+*.bak
+*.backup
+*.tmp
