@@ -1,6 +1,6 @@
 import asyncio
 import os
-import ccxt
+import ccxt.pro as ccxt
 from typing import Dict, Optional, Any
 from dataclasses import dataclass
 from datetime import datetime
@@ -31,9 +31,9 @@ class PositionData:
 class ExchangeManager:
     def __init__(self):
         self.exchanges = {}
-        self._init_exchanges()
+        # Will be initialized in async context
     
-    def _init_exchanges(self):
+    async def _init_exchanges(self):
         # Always add Binance for public data (no API keys needed for price data)
         self.exchanges['binance'] = ccxt.binance({
             'enableRateLimit': True,
@@ -74,7 +74,7 @@ class ExchangeManager:
                 raise ValueError(f"Exchange {exchange} not configured")
             
             ex = self.exchanges[exchange]
-            ticker = ex.fetch_ticker(symbol)
+            ticker = await ex.fetch_ticker(symbol)
             
             return PriceData(
                 symbol=symbol,
@@ -97,7 +97,7 @@ class ExchangeManager:
                 raise ValueError(f"Exchange {exchange} not configured")
             
             ex = self.exchanges[exchange]
-            balance = ex.fetch_balance()
+            balance = await ex.fetch_balance()
             
             # Return only non-zero balances
             return {
@@ -119,7 +119,7 @@ class ExchangeManager:
                 raise ValueError(f"Exchange {exchange} not configured")
             
             ex = self.exchanges[exchange]
-            positions = ex.fetch_positions()
+            positions = await ex.fetch_positions()
             
             # Filter only open positions
             open_positions = []
@@ -160,11 +160,20 @@ class ExchangeManager:
 class MarketDataService:
     def __init__(self):
         self.exchange_manager = ExchangeManager()
-        logger.info("Market Data Service initialized")
+        self._initialized = False
+        logger.info("Market Data Service created")
+    
+    async def initialize(self):
+        """Initialize async components"""
+        if not self._initialized:
+            await self.exchange_manager._init_exchanges()
+            self._initialized = True
+            logger.info("Market Data Service initialized")
     
     async def handle_price_request(self, symbol: str, exchange: str = None) -> Dict[str, Any]:
         """Handle price request from Telegram bot"""
         try:
+            await self.initialize()
             price_data = await self.exchange_manager.get_price(symbol, exchange)
             return {
                 'success': True,
@@ -185,6 +194,7 @@ class MarketDataService:
     async def handle_balance_request(self, exchange: str = None) -> Dict[str, Any]:
         """Handle balance request from Telegram bot"""
         try:
+            await self.initialize()
             balance = await self.exchange_manager.get_balance(exchange)
             return {
                 'success': True,
@@ -199,6 +209,7 @@ class MarketDataService:
     async def handle_positions_request(self, exchange: str = None) -> Dict[str, Any]:
         """Handle positions request from Telegram bot"""
         try:
+            await self.initialize()
             positions = await self.exchange_manager.get_positions(exchange)
             return {
                 'success': True,
@@ -223,6 +234,7 @@ class MarketDataService:
     async def handle_pnl_request(self, exchange: str = None) -> Dict[str, Any]:
         """Handle PNL request from Telegram bot"""
         try:
+            await self.initialize()
             pnl_data = await self.exchange_manager.get_total_pnl(exchange)
             return {
                 'success': True,
