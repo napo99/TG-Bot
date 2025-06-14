@@ -3,7 +3,7 @@ import os
 import json
 from typing import Dict, Any
 from datetime import datetime
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from aiohttp import ClientSession, ClientTimeout
 from loguru import logger
@@ -67,6 +67,31 @@ class MarketDataClient:
             logger.error(f"Error fetching PNL: {e}")
             return {'success': False, 'error': str(e)}
     
+    async def get_combined_price(self, symbol: str, exchange: str = None) -> Dict[str, Any]:
+        session = await self._get_session()
+        try:
+            async with session.post(f"{self.base_url}/combined_price", json={
+                'symbol': symbol,
+                'exchange': exchange
+            }) as response:
+                return await response.json()
+        except Exception as e:
+            logger.error(f"Error fetching combined price: {e}")
+            return {'success': False, 'error': str(e)}
+    
+    async def get_top_symbols(self, market_type: str = 'spot', limit: int = 10, exchange: str = None) -> Dict[str, Any]:
+        session = await self._get_session()
+        try:
+            async with session.post(f"{self.base_url}/top_symbols", json={
+                'market_type': market_type,
+                'limit': limit,
+                'exchange': exchange
+            }) as response:
+                return await response.json()
+        except Exception as e:
+            logger.error(f"Error fetching top symbols: {e}")
+            return {'success': False, 'error': str(e)}
+
     async def close(self):
         if self.session:
             await self.session.close()
@@ -95,17 +120,23 @@ class TelegramBot:
         welcome_text = """
 🚀 **Crypto Trading Assistant**
 
-Available commands:
-• `/price <symbol>` - Get current price (e.g., /price BTC/USDT)
+💰 **Price Commands:**
+• `/price <symbol>` - Get spot + perps price (e.g., /price BTC-USDT)
+• `/top10 spot` - Top 10 spot markets by volume
+• `/top10 perps` - Top 10 perpetual futures by volume
+
+📊 **Portfolio Commands:**
 • `/balance` - Show account balance
-• `/positions` - Show open positions
+• `/positions` - Show open positions  
 • `/pnl` - Show P&L summary
+
+📋 **Other:**
 • `/help` - Show this help message
 
-Examples:
-• `/price BTC/USDT`
-• `/price ETH-PERP`
-• `/balance`
+**Examples:**
+• `/price ETH-USDT` (shows both spot & perps)
+• `/top10 spot`
+• `/top10 perps`
         """
         
         await update.message.reply_text(welcome_text, parse_mode='Markdown')
@@ -119,38 +150,68 @@ Examples:
         await self.start(update, context)
     
     async def price_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Price command handler"""
+        """Enhanced price command showing both spot and perps"""
         if not self._is_authorized(str(update.effective_user.id)):
             await update.message.reply_text("❌ Unauthorized access")
             return
         
         if not context.args:
-            await update.message.reply_text("❌ Please provide a symbol. Example: `/price BTC/USDT`", parse_mode='Markdown')
+            await update.message.reply_text("❌ Please provide a symbol. Example: `/price BTC-USDT`", parse_mode='Markdown')
             return
         
-        symbol = context.args[0].upper()
-        await update.message.reply_text(f"⏳ Fetching price for {symbol}...")
+        symbol = context.args[0].upper().replace('/', '-')
+        await update.message.reply_text(f"⏳ Fetching prices for {symbol}...")
         
-        result = await self.market_client.get_price(symbol)
+        result = await self.market_client.get_combined_price(symbol)
         
         if result['success']:
             data = result['data']
-            price = data['price']
-            change_24h = data.get('change_24h', 0)
-            volume_24h = data.get('volume_24h', 0)
+            base_symbol = data['base_symbol']
             
-            change_emoji = "🟢" if change_24h >= 0 else "🔴"
-            change_sign = "+" if change_24h >= 0 else ""
+            message = f"📊 **{base_symbol}**\n\n"
             
-            message = f"""
-📈 **{symbol}**
+            # Spot data
+            if 'spot' in data and data['spot']:
+                spot = data['spot']
+                change_24h = spot.get('change_24h', 0) or 0
+                change_emoji = "🟢" if change_24h >= 0 else "🔴"
+                change_sign = "+" if change_24h >= 0 else ""
+                
+                message += f"""🏪 **SPOT**
+💰 Price: **${spot['price']:,.4f}**
+{change_emoji} 24h: **{change_sign}{change_24h:.2f}%**
+📊 Volume: **{spot.get('volume_24h', 0):,.0f}**
 
-💰 Price: **${price:,.4f}**
-{change_emoji} 24h Change: **{change_sign}{change_24h:.2f}%**
-📊 24h Volume: **{volume_24h:,.2f}**
-
-🕐 Updated: {datetime.now().strftime('%H:%M:%S')}
-            """
+"""
+            
+            # Perp data
+            if 'perp' in data and data['perp']:
+                perp = data['perp']
+                change_24h = perp.get('change_24h', 0) or 0
+                change_emoji = "🟢" if change_24h >= 0 else "🔴"
+                change_sign = "+" if change_24h >= 0 else ""
+                
+                message += f"""⚡ **PERPETUALS**
+💰 Price: **${perp['price']:,.4f}**
+{change_emoji} 24h: **{change_sign}{change_24h:.2f}%**
+📊 Volume: **{perp.get('volume_24h', 0):,.0f}**"""
+                
+                # Add OI and funding rate if available
+                if perp.get('open_interest'):
+                    message += f"\n📈 OI: **${perp['open_interest']:,.0f}**"
+                
+                if perp.get('funding_rate') is not None:
+                    funding_rate = perp['funding_rate'] * 100  # Convert to percentage
+                    funding_emoji = "🟢" if funding_rate >= 0 else "🔴"
+                    funding_sign = "+" if funding_rate >= 0 else ""
+                    message += f"\n💸 Funding: **{funding_sign}{funding_rate:.4f}%**"
+                
+                message += "\n"
+            
+            if 'spot' not in data and 'perp' not in data:
+                message += "❌ No data available for this symbol"
+            
+            message += f"\n🕐 Updated: {datetime.now().strftime('%H:%M:%S')}"
             
             await update.message.reply_text(message, parse_mode='Markdown')
         else:
@@ -256,6 +317,58 @@ Examples:
         else:
             await update.message.reply_text(f"❌ Error fetching P&L: {result['error']}")
     
+    async def top10_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Top 10 symbols command handler"""
+        if not self._is_authorized(str(update.effective_user.id)):
+            await update.message.reply_text("❌ Unauthorized access")
+            return
+        
+        if not context.args:
+            await update.message.reply_text("❌ Please specify market type. Use: `/top10 spot` or `/top10 perps`", parse_mode='Markdown')
+            return
+        
+        market_type = context.args[0].lower()
+        if market_type not in ['spot', 'perps']:
+            await update.message.reply_text("❌ Invalid market type. Use: `/top10 spot` or `/top10 perps`", parse_mode='Markdown')
+            return
+        
+        # Convert 'perps' to 'perp' for the API
+        api_market_type = 'perp' if market_type == 'perps' else market_type
+        
+        await update.message.reply_text(f"⏳ Fetching top 10 {market_type} markets...")
+        
+        result = await self.market_client.get_top_symbols(api_market_type, 10)
+        
+        if result['success']:
+            data = result['data']
+            symbols = data['symbols']
+            market_display = market_type.upper()
+            
+            message = f"🏆 **TOP 10 {market_display} MARKETS**\n\n"
+            
+            for i, symbol in enumerate(symbols, 1):
+                price = symbol['price']
+                change_24h = symbol.get('change_24h', 0) or 0
+                volume_24h = symbol.get('volume_24h', 0) or 0
+                
+                change_emoji = "🟢" if change_24h >= 0 else "🔴"
+                change_sign = "+" if change_24h >= 0 else ""
+                
+                # Shorten symbol name for display
+                display_symbol = symbol['symbol'].replace('/USDT', '').replace(':USDT', '').replace('-PERP', '')
+                
+                message += f"""**{i}.** {display_symbol}
+💰 ${price:,.4f} {change_emoji} {change_sign}{change_24h:.2f}%
+📊 Vol: ${volume_24h:,.0f}
+
+"""
+            
+            message += f"🕐 Updated: {datetime.now().strftime('%H:%M:%S')}"
+            
+            await update.message.reply_text(message, parse_mode='Markdown')
+        else:
+            await update.message.reply_text(f"❌ Error fetching top {market_type}: {result['error']}")
+    
     async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Error handler"""
         logger.error(f"Update {update} caused error {context.error}")
@@ -280,6 +393,7 @@ def main():
     application.add_handler(CommandHandler("start", bot.start))
     application.add_handler(CommandHandler("help", bot.help_command))
     application.add_handler(CommandHandler("price", bot.price_command))
+    application.add_handler(CommandHandler("top10", bot.top10_command))
     application.add_handler(CommandHandler("balance", bot.balance_command))
     application.add_handler(CommandHandler("positions", bot.positions_command))
     application.add_handler(CommandHandler("pnl", bot.pnl_command))
@@ -287,10 +401,35 @@ def main():
     # Add error handler
     application.add_error_handler(bot.error_handler)
     
+    # Set up bot commands for Telegram menu
+    async def set_bot_commands():
+        commands = [
+            BotCommand("start", "🚀 Start the bot and see help"),
+            BotCommand("help", "📋 Show available commands"),
+            BotCommand("price", "💰 Get spot + perp prices (e.g., /price BTC-USDT)"),
+            BotCommand("top10", "🏆 Top 10 markets (/top10 spot or /top10 perps)"),
+            BotCommand("balance", "💳 Show account balance"),
+            BotCommand("positions", "📊 Show open positions"),
+            BotCommand("pnl", "📈 Show P&L summary"),
+        ]
+        await application.bot.set_my_commands(commands)
+        logger.info("Bot commands registered")
+    
     logger.info("Starting Telegram bot...")
     
+    # Set bot commands and run
+    async def run_bot():
+        await application.initialize()
+        await set_bot_commands()
+        await application.start()
+        await application.updater.start_polling(drop_pending_updates=True)
+        await application.updater.idle()
+        await application.stop()
+        await application.shutdown()
+    
     # Run the bot
-    application.run_polling(drop_pending_updates=True)
+    import asyncio
+    asyncio.run(run_bot())
 
 if __name__ == "__main__":
     main()
