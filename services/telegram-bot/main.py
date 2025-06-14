@@ -193,10 +193,15 @@ class TelegramBot:
                 change_emoji = "🟢" if change_24h >= 0 else "🔴"
                 change_sign = "+" if change_24h >= 0 else ""
                 
+                # Calculate USD volume
+                volume_native = spot.get('volume_24h', 0) or 0
+                volume_usd = volume_native * spot['price']
+                base_token = base_symbol.split('/')[0]
+                
                 message += f"""🏪 **SPOT**
 💰 Price: **${spot['price']:,.4f}**
 {change_emoji} 24h: **{change_sign}{change_24h:.2f}%**
-📊 Volume: **{spot.get('volume_24h', 0):,.0f}**
+📊 Volume: **{volume_native:,.0f} {base_token}** (${volume_usd/1e6:.1f}M)
 
 """
             
@@ -207,10 +212,15 @@ class TelegramBot:
                 change_emoji = "🟢" if change_24h >= 0 else "🔴"
                 change_sign = "+" if change_24h >= 0 else ""
                 
+                # Calculate USD volume for perps
+                volume_native = perp.get('volume_24h', 0) or 0
+                volume_usd = volume_native * perp['price']
+                base_token = base_symbol.split('/')[0]
+                
                 message += f"""⚡ **PERPETUALS**
 💰 Price: **${perp['price']:,.4f}**
 {change_emoji} 24h: **{change_sign}{change_24h:.2f}%**
-📊 Volume: **{perp.get('volume_24h', 0):,.0f}**"""
+📊 Volume: **{volume_native:,.0f} {base_token}** (${volume_usd/1e6:.1f}M)"""
                 
                 # Add OI and funding rate if available
                 if perp.get('open_interest'):
@@ -370,12 +380,13 @@ class TelegramBot:
                 change_emoji = "🟢" if change_24h >= 0 else "🔴"
                 change_sign = "+" if change_24h >= 0 else ""
                 
-                # Shorten symbol name for display
+                # Shorten symbol name for display and calculate USD volume
                 display_symbol = symbol['symbol'].replace('/USDT', '').replace(':USDT', '').replace('-PERP', '')
+                volume_usd = volume_24h * price
                 
                 message += f"""**{i}.** {display_symbol}
 💰 ${price:,.4f} {change_emoji} {change_sign}{change_24h:.2f}%
-📊 Vol: ${volume_24h:,.0f}
+📊 Vol: {volume_24h:,.0f} {display_symbol} (${volume_usd/1e6:.0f}M)
 
 """
             
