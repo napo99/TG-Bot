@@ -275,22 +275,25 @@ class ExchangeManager:
             # Fetch all tickers
             tickers = await ex.fetch_tickers()
             
-            # Filter by market type and sort by volume
+            # Filter by market type 
             filtered_tickers = []
             for symbol, ticker in tickers.items():
                 if market_type == "spot":
-                    # Filter for spot markets (usually contain / and not :)
-                    if '/' in symbol and ':' not in symbol and 'USDT' in symbol:
+                    # Filter for major crypto spot markets (exclude fiat and test tokens)
+                    if ('/' in symbol and ':' not in symbol and symbol.endswith('/USDT') and 
+                        not any(x in symbol for x in ['UP', 'DOWN', 'BULL', 'BEAR', 'TRY', 'COP', 'ARS', 'UAH', 'RUB']) and
+                        not symbol.startswith('USDT/')):
                         filtered_tickers.append((symbol, ticker))
                 elif market_type == "perp":
-                    # Filter for perp markets (usually contain :USDT or -PERP)
-                    if ':USDT' in symbol or 'PERP' in symbol:
+                    # Filter for perpetual contracts (format: BASE/USDT:USDT)
+                    if (symbol.endswith(':USDT') and '/USDT:' in symbol and 
+                        ticker.get('baseVolume', 0) and ticker.get('last')):
                         filtered_tickers.append((symbol, ticker))
             
-            # Sort by 24h volume (descending)
+            # Sort by market cap approximation (price × volume) for better ranking
             sorted_tickers = sorted(
                 filtered_tickers, 
-                key=lambda x: x[1].get('baseVolume', 0) or 0, 
+                key=lambda x: (x[1].get('last', 0) or 0) * (x[1].get('baseVolume', 0) or 0), 
                 reverse=True
             )
             

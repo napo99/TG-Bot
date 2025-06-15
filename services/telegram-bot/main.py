@@ -224,7 +224,8 @@ class TelegramBot:
                 
                 # Add OI and funding rate if available
                 if perp.get('open_interest'):
-                    message += f"\n📈 OI: **${perp['open_interest']:,.0f}**"
+                    oi_usd = perp['open_interest'] * perp['price']
+                    message += f"\n📈 OI: **{perp['open_interest']:,.0f} {base_token}** (${oi_usd/1e6:.0f}M)"
                 
                 if perp.get('funding_rate') is not None:
                     funding_rate = perp['funding_rate'] * 100  # Convert to percentage
