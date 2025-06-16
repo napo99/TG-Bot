@@ -381,15 +381,38 @@ class TelegramBot:
                 change_emoji = "🟢" if change_24h >= 0 else "🔴"
                 change_sign = "+" if change_24h >= 0 else ""
                 
-                # Shorten symbol name for display and calculate USD volume
+                # Shorten symbol name for display and calculate values
                 display_symbol = symbol['symbol'].replace('/USDT', '').replace(':USDT', '').replace('-PERP', '')
                 volume_usd = volume_24h * price
                 
+                # Use real market cap if available, otherwise show "N/A"
+                market_cap = symbol.get('market_cap')
+                if market_cap and market_cap > 0:
+                    if market_cap >= 1e9:  # Billions
+                        market_cap_display = f"${market_cap/1e9:.1f}B"
+                    else:  # Millions
+                        market_cap_display = f"${market_cap/1e6:.0f}M"
+                else:
+                    market_cap_display = "N/A"
+                
                 message += f"""**{i}.** {display_symbol}
-💰 ${price:,.4f} {change_emoji} {change_sign}{change_24h:.2f}%
-📊 Vol: {volume_24h:,.0f} {display_symbol} (${volume_usd/1e6:.0f}M)
-
-"""
+📈 MCap: {market_cap_display} {change_emoji} {change_sign}{change_24h:.2f}%
+💰 Price: ${price:,.4f}
+📊 Vol: {volume_24h:,.0f} {display_symbol} (${volume_usd/1e6:.0f}M)"""
+                
+                # Add OI and funding rate for perpetuals
+                if symbol.get('market_type') == 'perp':
+                    if symbol.get('open_interest'):
+                        oi_usd = symbol['open_interest'] * price
+                        message += f"\n📈 OI: {symbol['open_interest']:,.0f} {display_symbol} (${oi_usd/1e6:.0f}M)"
+                    
+                    if symbol.get('funding_rate') is not None:
+                        funding_rate = symbol['funding_rate'] * 100  # Convert to percentage
+                        funding_emoji = "🟢" if funding_rate >= 0 else "🔴"
+                        funding_sign = "+" if funding_rate >= 0 else ""
+                        message += f"\n💸 Funding: {funding_emoji} {funding_sign}{funding_rate:.4f}%"
+                
+                message += "\n\n"
             
             message += f"🕐 Updated: {datetime.now().strftime('%H:%M:%S')}"
             
