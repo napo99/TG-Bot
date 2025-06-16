@@ -8,6 +8,7 @@ import json
 from loguru import logger
 from dotenv import load_dotenv
 from volume_analysis import VolumeAnalysisEngine, VolumeSpike, CVDData
+from technical_indicators import TechnicalAnalysisService, TechnicalIndicators
 
 load_dotenv()
 
@@ -510,6 +511,7 @@ class MarketDataService:
     def __init__(self):
         self.exchange_manager = ExchangeManager()
         self.volume_engine = None  # Will be initialized after exchange_manager
+        self.technical_service = None  # Will be initialized after exchange_manager
         self._initialized = False
         logger.info("Market Data Service created")
     
@@ -518,6 +520,7 @@ class MarketDataService:
         if not self._initialized:
             await self.exchange_manager._init_exchanges()
             self.volume_engine = VolumeAnalysisEngine(self.exchange_manager)
+            self.technical_service = TechnicalAnalysisService(self.exchange_manager)
             self._initialized = True
             logger.info("Market Data Service initialized")
     
@@ -697,7 +700,7 @@ class MarketDataService:
                     'spike_percentage': spike.spike_percentage,
                     'spike_level': spike.spike_level,
                     'volume_usd': spike.volume_usd,
-                    'is_significant': spike.is_significant,
+                    'is_significant': bool(spike.is_significant),
                     'timestamp': spike.timestamp.isoformat()
                 }
             }
@@ -721,7 +724,7 @@ class MarketDataService:
                     'current_cvd': cvd.current_cvd,
                     'cvd_change_24h': cvd.cvd_change_24h,
                     'cvd_trend': cvd.cvd_trend,
-                    'divergence_detected': cvd.divergence_detected,
+                    'divergence_detected': bool(cvd.divergence_detected),
                     'price_trend': cvd.price_trend,
                     'timestamp': cvd.timestamp.isoformat()
                 }
@@ -746,7 +749,7 @@ class MarketDataService:
                     'spike_level': spike.spike_level,
                     'current_volume': spike.current_volume,
                     'volume_usd': spike.volume_usd,
-                    'is_significant': spike.is_significant
+                    'is_significant': bool(spike.is_significant)
                 })
             
             return {
@@ -763,6 +766,224 @@ class MarketDataService:
                 'success': False,
                 'error': str(e)
             }
+    
+    async def handle_comprehensive_analysis_request(self, symbol: str, timeframe: str = '15m', exchange: str = None) -> Dict[str, Any]:
+        """Handle comprehensive market analysis request"""
+        try:
+            await self.initialize()
+            
+            # Gather all data concurrently for better performance
+            import asyncio
+            
+            # Run all analysis in parallel
+            tasks = [
+                self.exchange_manager.get_combined_price(symbol, exchange),
+                self.volume_engine.detect_volume_spike(symbol, timeframe, exchange=exchange),
+                self.volume_engine.calculate_cvd(symbol, timeframe, exchange=exchange),
+                self.technical_service.get_technical_indicators(symbol, timeframe, exchange)
+            ]
+            
+            combined_price, volume_spike, cvd_data, tech_indicators = await asyncio.gather(*tasks)
+            
+            # Analyze market sentiment and control
+            sentiment_analysis = self._analyze_market_sentiment(
+                combined_price, volume_spike, cvd_data, tech_indicators
+            )
+            
+            return {
+                'success': True,
+                'data': {
+                    'symbol': symbol,
+                    'timeframe': timeframe,
+                    'timestamp': datetime.now().isoformat(),
+                    
+                    # Price data
+                    'price_data': self._format_price_data(combined_price),
+                    
+                    # Volume analysis
+                    'volume_analysis': {
+                        'current_volume': float(volume_spike.current_volume),
+                        'volume_usd': float(volume_spike.volume_usd),
+                        'spike_level': volume_spike.spike_level,
+                        'spike_percentage': float(volume_spike.spike_percentage),
+                        'is_significant': bool(volume_spike.is_significant),
+                        'relative_volume': float(volume_spike.current_volume / volume_spike.average_volume) if volume_spike.average_volume > 0 else 1.0
+                    },
+                    
+                    # CVD analysis
+                    'cvd_analysis': {
+                        'current_cvd': float(cvd_data.current_cvd),
+                        'cvd_trend': cvd_data.cvd_trend,
+                        'divergence_detected': bool(cvd_data.divergence_detected),
+                        'cvd_change_24h': float(cvd_data.cvd_change_24h)
+                    },
+                    
+                    # Technical indicators
+                    'technical_indicators': {
+                        'rsi_14': tech_indicators.rsi_14,
+                        'vwap': tech_indicators.vwap,
+                        'atr_14': tech_indicators.atr_14,
+                        'volatility_24h': tech_indicators.volatility_24h,
+                        'bb_upper': tech_indicators.bb_upper,
+                        'bb_middle': tech_indicators.bb_middle,
+                        'bb_lower': tech_indicators.bb_lower
+                    },
+                    
+                    # Market sentiment analysis
+                    'market_sentiment': sentiment_analysis,
+                    
+                    # OI data (for perps)
+                    'oi_data': self._extract_oi_data(combined_price)
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in comprehensive analysis for {symbol}: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def _format_price_data(self, combined_price: CombinedPriceData) -> Dict[str, Any]:
+        """Format price data for analysis response"""
+        if not combined_price:
+            return {}
+        
+        # Use perp data if available, otherwise spot
+        if combined_price.perp:
+            price_data = combined_price.perp
+            market_type = 'perp'
+        elif combined_price.spot:
+            price_data = combined_price.spot
+            market_type = 'spot'
+        else:
+            return {}
+        
+        return {
+            'current_price': float(price_data.price),
+            'change_24h': float(price_data.change_24h or 0),
+            'volume_24h': float(price_data.volume_24h or 0),
+            'volume_24h_usd': float((price_data.volume_24h or 0) * price_data.price),
+            'market_type': market_type,
+            'funding_rate': float(price_data.funding_rate or 0) if hasattr(price_data, 'funding_rate') else None
+        }
+    
+    def _extract_oi_data(self, combined_price: CombinedPriceData) -> Dict[str, Any]:
+        """Extract Open Interest data for perpetuals"""
+        if not combined_price or not combined_price.perp:
+            return {}
+        
+        perp = combined_price.perp
+        oi = perp.open_interest
+        
+        if not oi:
+            return {}
+        
+        oi_usd = oi * perp.price
+        
+        return {
+            'open_interest': float(oi),
+            'open_interest_usd': float(oi_usd),
+            'funding_rate': float(perp.funding_rate or 0)
+        }
+    
+    def _analyze_market_sentiment(self, combined_price, volume_spike, cvd_data, tech_indicators) -> Dict[str, Any]:
+        """Analyze overall market sentiment and control"""
+        
+        # Sentiment scoring components
+        price_sentiment = 0  # -3 to +3
+        volume_sentiment = 0  # -2 to +2
+        cvd_sentiment = 0   # -3 to +3
+        tech_sentiment = 0  # -2 to +2
+        
+        # Price sentiment (based on 24h change)
+        if combined_price and (combined_price.perp or combined_price.spot):
+            price_data = combined_price.perp or combined_price.spot
+            change_24h = price_data.change_24h or 0
+            
+            if change_24h > 5:
+                price_sentiment = 3
+            elif change_24h > 2:
+                price_sentiment = 2
+            elif change_24h > 0:
+                price_sentiment = 1
+            elif change_24h > -2:
+                price_sentiment = -1
+            elif change_24h > -5:
+                price_sentiment = -2
+            else:
+                price_sentiment = -3
+        
+        # Volume sentiment (based on spike level)
+        volume_level = volume_spike.spike_level
+        if volume_level == 'EXTREME':
+            volume_sentiment = 2
+        elif volume_level == 'HIGH':
+            volume_sentiment = 1
+        elif volume_level == 'MODERATE':
+            volume_sentiment = 1
+        else:
+            volume_sentiment = 0
+        
+        # CVD sentiment (based on trend and change)
+        if cvd_data.cvd_trend == 'BULLISH':
+            cvd_sentiment = 2 if cvd_data.cvd_change_24h > 0 else 1
+        elif cvd_data.cvd_trend == 'BEARISH':
+            cvd_sentiment = -2 if cvd_data.cvd_change_24h < 0 else -1
+        else:
+            cvd_sentiment = 0
+        
+        # Add divergence penalty
+        if cvd_data.divergence_detected:
+            cvd_sentiment -= 1
+        
+        # Technical sentiment (RSI + volatility)
+        if tech_indicators.rsi_14:
+            if tech_indicators.rsi_14 > 70:
+                tech_sentiment -= 1  # Overbought
+            elif tech_indicators.rsi_14 < 30:
+                tech_sentiment += 1  # Oversold
+            elif tech_indicators.rsi_14 > 50:
+                tech_sentiment += 1  # Bullish momentum
+            else:
+                tech_sentiment -= 1  # Bearish momentum
+        
+        # Overall sentiment calculation
+        total_sentiment = price_sentiment + volume_sentiment + cvd_sentiment + tech_sentiment
+        max_possible = 10  # 3+2+3+2
+        sentiment_score = (total_sentiment / max_possible) * 100
+        
+        # Determine market control
+        if sentiment_score > 30:
+            control = "BULLS"
+            control_strength = min(abs(sentiment_score), 100)
+        elif sentiment_score < -30:
+            control = "BEARS"
+            control_strength = min(abs(sentiment_score), 100)
+        else:
+            control = "NEUTRAL"
+            control_strength = 50
+        
+        # Aggression level based on volume and CVD alignment
+        aggression = "LOW"
+        if volume_spike.is_significant and abs(cvd_data.cvd_change_24h) > 1000:
+            aggression = "HIGH"
+        elif volume_spike.spike_level in ['HIGH', 'EXTREME'] or abs(cvd_data.cvd_change_24h) > 500:
+            aggression = "MODERATE"
+        
+        return {
+            'overall_sentiment': round(sentiment_score, 1),
+            'market_control': control,
+            'control_strength': round(control_strength, 1),
+            'aggression_level': aggression,
+            'divergence_warning': cvd_data.divergence_detected,
+            'components': {
+                'price_sentiment': price_sentiment,
+                'volume_sentiment': volume_sentiment,
+                'cvd_sentiment': cvd_sentiment,
+                'tech_sentiment': tech_sentiment
+            }
+        }
 
 # Simple HTTP server for inter-service communication
 from aiohttp import web, ClientSession
@@ -887,6 +1108,14 @@ async def create_app():
         result = await market_service.handle_volume_scan_request(timeframe, min_spike)
         return web.json_response(result)
     
+    async def comprehensive_analysis_handler(request):
+        data = await request.json()
+        symbol = data.get('symbol')
+        timeframe = data.get('timeframe', '15m')
+        exchange = data.get('exchange')
+        result = await market_service.handle_comprehensive_analysis_request(symbol, timeframe, exchange)
+        return web.json_response(result)
+    
     app.router.add_get('/health', health_handler)
     app.router.add_post('/price', price_handler)
     app.router.add_post('/combined_price', combined_price_handler)
@@ -895,6 +1124,7 @@ async def create_app():
     app.router.add_post('/volume_spike', volume_spike_handler)
     app.router.add_post('/cvd', cvd_handler)
     app.router.add_post('/volume_scan', volume_scan_handler)
+    app.router.add_post('/comprehensive_analysis', comprehensive_analysis_handler)
     app.router.add_post('/balance', balance_handler)
     app.router.add_post('/positions', positions_handler)
     app.router.add_post('/pnl', pnl_handler)

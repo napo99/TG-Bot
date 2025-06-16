@@ -91,6 +91,57 @@ class MarketDataClient:
         except Exception as e:
             logger.error(f"Error fetching top symbols: {e}")
             return {'success': False, 'error': str(e)}
+    
+    async def get_volume_spike(self, symbol: str, timeframe: str = '15m', exchange: str = None) -> Dict[str, Any]:
+        session = await self._get_session()
+        try:
+            async with session.post(f"{self.base_url}/volume_spike", json={
+                'symbol': symbol,
+                'timeframe': timeframe,
+                'exchange': exchange
+            }) as response:
+                return await response.json()
+        except Exception as e:
+            logger.error(f"Error fetching volume spike: {e}")
+            return {'success': False, 'error': str(e)}
+    
+    async def get_cvd(self, symbol: str, timeframe: str = '15m', exchange: str = None) -> Dict[str, Any]:
+        session = await self._get_session()
+        try:
+            async with session.post(f"{self.base_url}/cvd", json={
+                'symbol': symbol,
+                'timeframe': timeframe,
+                'exchange': exchange
+            }) as response:
+                return await response.json()
+        except Exception as e:
+            logger.error(f"Error fetching CVD: {e}")
+            return {'success': False, 'error': str(e)}
+    
+    async def get_volume_scan(self, timeframe: str = '15m', min_spike: float = 200) -> Dict[str, Any]:
+        session = await self._get_session()
+        try:
+            async with session.post(f"{self.base_url}/volume_scan", json={
+                'timeframe': timeframe,
+                'min_spike': min_spike
+            }) as response:
+                return await response.json()
+        except Exception as e:
+            logger.error(f"Error fetching volume scan: {e}")
+            return {'success': False, 'error': str(e)}
+    
+    async def get_comprehensive_analysis(self, symbol: str, timeframe: str = '15m', exchange: str = None) -> Dict[str, Any]:
+        session = await self._get_session()
+        try:
+            async with session.post(f"{self.base_url}/comprehensive_analysis", json={
+                'symbol': symbol,
+                'timeframe': timeframe,
+                'exchange': exchange
+            }) as response:
+                return await response.json()
+        except Exception as e:
+            logger.error(f"Error fetching comprehensive analysis: {e}")
+            return {'success': False, 'error': str(e)}
 
     async def close(self):
         if self.session:
@@ -124,6 +175,10 @@ class TelegramBot:
                 BotCommand("help", "📋 Show available commands"),
                 BotCommand("price", "💰 Get spot + perp prices (e.g., /price BTC-USDT)"),
                 BotCommand("top10", "🏆 Top 10 markets (/top10 spot or /top10 perps)"),
+                BotCommand("analysis", "🎯 Complete market analysis (/analysis BTC-USDT 15m)"),
+                BotCommand("volume", "📊 Volume spike analysis (/volume BTC-USDT 15m)"),
+                BotCommand("cvd", "📈 Cumulative Volume Delta (/cvd BTC-USDT 1h)"),
+                BotCommand("volscan", "🔍 Scan volume spikes (/volscan 200 15m)"),
                 BotCommand("balance", "💳 Show account balance"),
                 BotCommand("positions", "📊 Show open positions"),
                 BotCommand("pnl", "📈 Show P&L summary"),
@@ -136,12 +191,20 @@ class TelegramBot:
         welcome_text = """
 🚀 **Crypto Trading Assistant**
 
+🎯 **Comprehensive Analysis:**
+• `/analysis <symbol> [timeframe]` - Complete market snapshot (e.g., /analysis BTC-USDT 15m)
+
 💰 **Price Commands:**
 • `/price <symbol>` - Get spot + perps price (e.g., /price BTC-USDT)
-• `/top10 spot` - Top 10 spot markets by volume
-• `/top10 perps` - Top 10 perpetual futures by volume
+• `/top10 spot` - Top 10 spot markets by market cap
+• `/top10 perps` - Top 10 perpetual futures by market cap
 
-📊 **Portfolio Commands:**
+📊 **Volume Intelligence:**
+• `/volume <symbol> [timeframe]` - Volume spike analysis (e.g., /volume BTC-USDT 15m)
+• `/cvd <symbol> [timeframe]` - Cumulative Volume Delta (e.g., /cvd ETH-USDT 1h)
+• `/volscan [threshold] [timeframe]` - Scan all symbols for volume spikes (e.g., /volscan 200 15m)
+
+💼 **Portfolio Commands:**
 • `/balance` - Show account balance
 • `/positions` - Show open positions  
 • `/pnl` - Show P&L summary
@@ -150,9 +213,10 @@ class TelegramBot:
 • `/help` - Show this help message
 
 **Examples:**
+• `/analysis BTC-USDT 15m` (complete market analysis)
 • `/price ETH-USDT` (shows both spot & perps)
-• `/top10 spot`
-• `/top10 perps`
+• `/volume BTC-USDT 15m` (volume spike detection)
+• `/cvd ETH-USDT 1h` (buy/sell pressure analysis)
         """
         
         await update.message.reply_text(welcome_text, parse_mode='Markdown')
@@ -420,6 +484,328 @@ class TelegramBot:
         else:
             await update.message.reply_text(f"❌ Error fetching top {market_type}: {result['error']}")
     
+    async def volume_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Volume spike analysis command"""
+        if not self._is_authorized(str(update.effective_user.id)):
+            await update.message.reply_text("❌ Unauthorized access")
+            return
+        
+        if not context.args:
+            await update.message.reply_text("❌ Please provide a symbol. Example: `/volume BTC-USDT 15m`", parse_mode='Markdown')
+            return
+        
+        symbol = context.args[0].upper().replace('/', '-').replace('-', '/')
+        timeframe = context.args[1] if len(context.args) > 1 else '15m'
+        
+        await update.message.reply_text(f"⏳ Analyzing volume for {symbol} ({timeframe})...")
+        
+        result = await self.market_client.get_volume_spike(symbol, timeframe)
+        
+        if result['success']:
+            data = result['data']
+            
+            # Get spike level emoji
+            spike_level = data['spike_level']
+            if spike_level == 'EXTREME':
+                level_emoji = "🔥🔥🔥"
+            elif spike_level == 'HIGH':
+                level_emoji = "🔥🔥"
+            elif spike_level == 'MODERATE':
+                level_emoji = "🔥"
+            elif spike_level == 'LOW':
+                level_emoji = "📈"
+            else:
+                level_emoji = "😴"
+            
+            # Format spike percentage
+            spike_pct = data['spike_percentage']
+            spike_sign = "+" if spike_pct >= 0 else ""
+            
+            # Format volumes
+            current_vol = data['current_volume']
+            avg_vol = data['average_volume']
+            vol_usd = data['volume_usd']
+            
+            # Extract base token
+            base_token = symbol.split('/')[0]
+            
+            message = f"""📊 **VOLUME ANALYSIS - {symbol}**
+
+{level_emoji} **Spike Level**: {spike_level}
+📈 **Volume Change**: {spike_sign}{spike_pct:.1f}%
+⏰ **Timeframe**: {timeframe}
+
+📊 **Current Volume**: {current_vol:,.0f} {base_token}
+💰 **USD Value**: ${vol_usd/1e6:.1f}M
+📊 **Average Volume**: {avg_vol:,.0f} {base_token}
+
+🔍 **Analysis**: {'Significant volume activity detected!' if data['is_significant'] else 'Normal trading volume'}
+
+🕐 Updated: {datetime.now().strftime('%H:%M:%S')}"""
+
+            await update.message.reply_text(message, parse_mode='Markdown')
+        else:
+            await update.message.reply_text(f"❌ Error analyzing volume: {result['error']}")
+    
+    async def cvd_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """CVD (Cumulative Volume Delta) analysis command"""
+        if not self._is_authorized(str(update.effective_user.id)):
+            await update.message.reply_text("❌ Unauthorized access")
+            return
+        
+        if not context.args:
+            await update.message.reply_text("❌ Please provide a symbol. Example: `/cvd BTC-USDT 1h`", parse_mode='Markdown')
+            return
+        
+        symbol = context.args[0].upper().replace('/', '-').replace('-', '/')
+        timeframe = context.args[1] if len(context.args) > 1 else '1h'
+        
+        await update.message.reply_text(f"⏳ Calculating CVD for {symbol} ({timeframe})...")
+        
+        result = await self.market_client.get_cvd(symbol, timeframe)
+        
+        if result['success']:
+            data = result['data']
+            
+            # Get trend emojis
+            cvd_trend = data['cvd_trend']
+            if cvd_trend == 'BULLISH':
+                trend_emoji = "🟢📈"
+            elif cvd_trend == 'BEARISH':
+                trend_emoji = "🔴📉"
+            else:
+                trend_emoji = "⚪➡️"
+            
+            # Format CVD values
+            current_cvd = data['current_cvd']
+            cvd_change = data['cvd_change_24h']
+            change_sign = "+" if cvd_change >= 0 else ""
+            
+            # Divergence detection
+            divergence = data['divergence_detected']
+            divergence_text = "⚠️ **DIVERGENCE DETECTED**" if divergence else "✅ No divergence"
+            
+            message = f"""📈 **CVD ANALYSIS - {symbol}**
+
+{trend_emoji} **CVD Trend**: {cvd_trend}
+💹 **Current CVD**: {current_cvd:,.0f}
+📊 **24h Change**: {change_sign}{cvd_change:,.0f}
+⏰ **Timeframe**: {timeframe}
+
+🔍 **Price vs CVD**: {divergence_text}
+📊 **Price Trend**: {data['price_trend']}
+
+💡 **What is CVD?**
+Green candles = Buying pressure (+volume)
+Red candles = Selling pressure (-volume)
+CVD shows cumulative market sentiment
+
+🕐 Updated: {datetime.now().strftime('%H:%M:%S')}"""
+
+            await update.message.reply_text(message, parse_mode='Markdown')
+        else:
+            await update.message.reply_text(f"❌ Error calculating CVD: {result['error']}")
+    
+    async def volscan_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Volume spike scanning command"""
+        if not self._is_authorized(str(update.effective_user.id)):
+            await update.message.reply_text("❌ Unauthorized access")
+            return
+        
+        # Parse arguments
+        threshold = float(context.args[0]) if context.args else 200
+        timeframe = context.args[1] if len(context.args) > 1 else '15m'
+        
+        await update.message.reply_text(f"🔍 Scanning for volume spikes >{threshold}% ({timeframe})...")
+        
+        result = await self.market_client.get_volume_scan(timeframe, threshold)
+        
+        if result['success']:
+            data = result['data']
+            spikes = data['spikes']
+            
+            if not spikes:
+                await update.message.reply_text(f"😴 No volume spikes >{threshold}% found in {timeframe} timeframe")
+                return
+            
+            message = f"🔍 **VOLUME SPIKES DETECTED**\n\n"
+            message += f"📊 **Threshold**: >{threshold}%\n"
+            message += f"⏰ **Timeframe**: {timeframe}\n"
+            message += f"🎯 **Found**: {len(spikes)} spike(s)\n\n"
+            
+            for i, spike in enumerate(spikes[:5], 1):  # Limit to top 5
+                symbol = spike['symbol']
+                spike_pct = spike['spike_percentage']
+                level = spike['spike_level']
+                vol_usd = spike['volume_usd']
+                
+                # Level emoji
+                if level == 'EXTREME':
+                    emoji = "🔥🔥🔥"
+                elif level == 'HIGH':
+                    emoji = "🔥🔥"
+                elif level == 'MODERATE':
+                    emoji = "🔥"
+                else:
+                    emoji = "📈"
+                
+                base_token = symbol.split('/')[0]
+                
+                message += f"**{i}.** {base_token} {emoji}\n"
+                message += f"📈 Spike: +{spike_pct:.0f}%\n"
+                message += f"💰 Volume: ${vol_usd/1e6:.1f}M\n\n"
+            
+            if len(spikes) > 5:
+                message += f"... and {len(spikes) - 5} more spikes\n"
+            
+            message += f"🕐 Updated: {datetime.now().strftime('%H:%M:%S')}"
+            
+            await update.message.reply_text(message, parse_mode='Markdown')
+        else:
+            await update.message.reply_text(f"❌ Error scanning volumes: {result['error']}")
+    
+    async def analysis_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Comprehensive market analysis command"""
+        if not self._is_authorized(str(update.effective_user.id)):
+            await update.message.reply_text("❌ Unauthorized access")
+            return
+        
+        if not context.args:
+            await update.message.reply_text("❌ Please provide a symbol. Example: `/analysis BTC-USDT 15m`", parse_mode='Markdown')
+            return
+        
+        symbol = context.args[0].upper().replace('/', '-').replace('-', '/')
+        timeframe = context.args[1] if len(context.args) > 1 else '15m'
+        
+        await update.message.reply_text(f"🎯 Running comprehensive analysis for {symbol} ({timeframe})...")
+        
+        result = await self.market_client.get_comprehensive_analysis(symbol, timeframe)
+        
+        if result['success']:
+            data = result['data']
+            
+            # Extract data components
+            price_data = data.get('price_data', {})
+            volume_data = data.get('volume_analysis', {})
+            cvd_data = data.get('cvd_analysis', {})
+            tech_data = data.get('technical_indicators', {})
+            sentiment = data.get('market_sentiment', {})
+            oi_data = data.get('oi_data', {})
+            
+            # Format price and change
+            current_price = price_data.get('current_price', 0)
+            change_24h = price_data.get('change_24h', 0)
+            change_emoji = "🟢" if change_24h >= 0 else "🔴"
+            change_sign = "+" if change_24h >= 0 else ""
+            
+            # Format volume spike
+            spike_level = volume_data.get('spike_level', 'NORMAL')
+            spike_pct = volume_data.get('spike_percentage', 0)
+            vol_usd = volume_data.get('volume_usd', 0)
+            rel_volume = volume_data.get('relative_volume', 1)
+            
+            # Volume spike emoji
+            if spike_level == 'EXTREME':
+                vol_emoji = "🔥🔥🔥"
+            elif spike_level == 'HIGH':
+                vol_emoji = "🔥🔥"
+            elif spike_level == 'MODERATE':
+                vol_emoji = "🔥"
+            else:
+                vol_emoji = "😴"
+            
+            # CVD trend
+            cvd_trend = cvd_data.get('cvd_trend', 'NEUTRAL')
+            cvd_current = cvd_data.get('current_cvd', 0)
+            cvd_change = cvd_data.get('cvd_change_24h', 0)
+            divergence = cvd_data.get('divergence_detected', False)
+            
+            cvd_emoji = "🟢📈" if cvd_trend == 'BULLISH' else "🔴📉" if cvd_trend == 'BEARISH' else "⚪➡️"
+            cvd_sign = "+" if cvd_change >= 0 else ""
+            
+            # Technical indicators
+            rsi = tech_data.get('rsi_14')
+            vwap = tech_data.get('vwap')
+            volatility = tech_data.get('volatility_24h')
+            
+            # Market sentiment
+            control = sentiment.get('market_control', 'NEUTRAL')
+            control_strength = sentiment.get('control_strength', 50)
+            aggression = sentiment.get('aggression_level', 'LOW')
+            
+            # Control emoji
+            if control == 'BULLS':
+                control_emoji = "🟢🐂"
+            elif control == 'BEARS':
+                control_emoji = "🔴🐻"
+            else:
+                control_emoji = "⚪🦀"
+            
+            # Build message
+            base_token = symbol.split('/')[0]
+            
+            message = f"""🎯 **MARKET ANALYSIS - {symbol}** ({timeframe})
+
+💰 **PRICE**: ${current_price:,.2f} {change_emoji} {change_sign}{change_24h:.1f}%
+📊 **VOLUME**: {vol_emoji} {spike_level} ({spike_pct:+.0f}%, ${vol_usd/1e6:.1f}M)
+📈 **CVD**: {cvd_emoji} {cvd_trend} ({cvd_sign}{cvd_change:,.0f})"""
+
+            # Add OI data for perps
+            if oi_data and oi_data.get('open_interest'):
+                oi_usd = oi_data.get('open_interest_usd', 0)
+                funding = oi_data.get('funding_rate', 0) * 100
+                funding_sign = "+" if funding >= 0 else ""
+                message += f"\n📈 **OI**: ${oi_usd/1e6:.0f}M | 💸 Funding: {funding_sign}{funding:.4f}%"
+
+            message += f"""
+
+📉 **TECHNICAL**:"""
+            
+            if rsi:
+                rsi_status = "Overbought" if rsi > 70 else "Oversold" if rsi < 30 else "Neutral"
+                message += f"\n• RSI: {rsi:.0f} ({rsi_status})"
+            
+            if vwap and current_price:
+                vwap_status = "Above VWAP ✅" if current_price > vwap else "Below VWAP ❌"
+                message += f"\n• VWAP: ${vwap:,.2f} ({vwap_status})"
+            
+            if volatility:
+                vol_level = "HIGH" if volatility > 5 else "MODERATE" if volatility > 2 else "LOW"
+                message += f"\n• Volatility: {volatility:.1f}% ({vol_level})"
+            
+            message += f"\n• Rel Volume: {rel_volume:.1f}x"
+
+            message += f"""
+
+🎯 **MARKET CONTROL**:
+{control_emoji} **{control} IN CONTROL** ({control_strength:.0f}% confidence)
+⚡ **Aggression**: {aggression}"""
+
+            if divergence:
+                message += f"\n⚠️ **CVD-Price Divergence Detected!**"
+
+            # Add key insights
+            insights = []
+            if spike_level in ['HIGH', 'EXTREME']:
+                insights.append(f"🔥 Unusual {spike_level.lower()} volume activity")
+            if divergence:
+                insights.append("⚠️ Watch for potential reversal")
+            if rsi and rsi > 70:
+                insights.append("📊 RSI suggests overbought conditions")
+            elif rsi and rsi < 30:
+                insights.append("📊 RSI suggests oversold conditions")
+
+            if insights:
+                message += f"\n\n💡 **Key Insights**:\n"
+                for insight in insights[:3]:  # Limit to 3 insights
+                    message += f"• {insight}\n"
+
+            message += f"\n🕐 {datetime.now().strftime('%H:%M:%S')} UTC"
+
+            await update.message.reply_text(message, parse_mode='Markdown')
+        else:
+            await update.message.reply_text(f"❌ Error running analysis: {result['error']}")
+    
     async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Error handler"""
         logger.error(f"Update {update} caused error {context.error}")
@@ -445,6 +831,10 @@ def main():
     application.add_handler(CommandHandler("help", bot.help_command))
     application.add_handler(CommandHandler("price", bot.price_command))
     application.add_handler(CommandHandler("top10", bot.top10_command))
+    application.add_handler(CommandHandler("analysis", bot.analysis_command))
+    application.add_handler(CommandHandler("volume", bot.volume_command))
+    application.add_handler(CommandHandler("cvd", bot.cvd_command))
+    application.add_handler(CommandHandler("volscan", bot.volscan_command))
     application.add_handler(CommandHandler("balance", bot.balance_command))
     application.add_handler(CommandHandler("positions", bot.positions_command))
     application.add_handler(CommandHandler("pnl", bot.pnl_command))

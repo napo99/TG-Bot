@@ -101,13 +101,13 @@ class VolumeAnalysisEngine:
             return VolumeSpike(
                 symbol=symbol,
                 timeframe=timeframe,
-                current_volume=current_volume,
-                average_volume=spike_analysis['average_volume'],
-                spike_percentage=spike_analysis['spike_percentage'],
+                current_volume=float(current_volume),
+                average_volume=float(spike_analysis['average_volume']),
+                spike_percentage=float(spike_analysis['spike_percentage']),
                 spike_level=spike_level,
                 timestamp=datetime.now(),
-                volume_usd=volume_usd,
-                is_significant=is_significant
+                volume_usd=float(volume_usd),
+                is_significant=bool(is_significant)
             )
             
         except Exception as e:
@@ -264,10 +264,10 @@ class VolumeAnalysisEngine:
             return CVDData(
                 symbol=symbol,
                 timeframe=timeframe,
-                current_cvd=round(current_cvd, 2),
-                cvd_change_24h=round(cvd_change_24h, 2),
+                current_cvd=float(round(current_cvd, 2)),
+                cvd_change_24h=float(round(cvd_change_24h, 2)),
                 cvd_trend=cvd_trend,
-                divergence_detected=divergence_detected,
+                divergence_detected=bool(divergence_detected),
                 price_trend=price_trend,
                 timestamp=datetime.now()
             )
@@ -314,7 +314,8 @@ class VolumeAnalysisEngine:
         price_trend_up = price_slope > 0
         cvd_trend_up = cvd_slope > 0
         
-        return price_trend_up != cvd_trend_up
+        # Convert to Python bool to ensure JSON serialization
+        return bool(price_trend_up != cvd_trend_up)
     
     async def scan_volume_spikes(self, timeframe: str = '15m', 
                                 min_spike_percentage: float = 200) -> List[VolumeSpike]:
