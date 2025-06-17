@@ -15,125 +15,35 @@ load_dotenv()
 class MarketCapRanking:
     """Smart ranking system using known market cap order and trading data"""
     
-    # Top cryptocurrencies by known market cap (approximate order)
-    MARKET_CAP_RANKING = {
-        'BTC': 1,   # ~$2T
-        'ETH': 2,   # ~$306B  
-        'USDT': 3,  # ~$137B
-        'XRP': 4,   # ~$77B
-        'BNB': 5,   # ~$67B
-        'SOL': 6,   # ~$64B
-        'USDC': 7,  # ~$46B
-        'ADA': 8,   # ~$18B
-        'DOGE': 9,  # ~$17B
-        'TRX': 10,  # ~$15B
-        'AVAX': 11, # ~$14B
-        'SHIB': 12, # ~$13B
-        'TON': 13,  # ~$12B
-        'DOT': 14,  # ~$11B
-        'LINK': 15, # ~$10B
-        'MATIC': 16, # ~$9B
-        'UNI': 17,  # ~$8B
-        'LTC': 18,  # ~$7B
-        'BCH': 19,  # ~$6B
-        'NEAR': 20, # ~$5B
-        'ATOM': 21, # ~$4B
-        'ICP': 22,  # ~$4B
-        'FIL': 23,  # ~$3B
-        'ETC': 24,  # ~$3B
-        'APT': 25,  # ~$3B
-        'HBAR': 26, # ~$2.5B
-        'XLM': 27,  # ~$2.5B
-        'VET': 28,  # ~$2B
-        'OP': 29,   # ~$2B
-        'ALGO': 30, # ~$1.5B
-        'MANA': 40,
-        'SAND': 41,
-        'AXS': 42,
-        'GALA': 43,
-        'CHZ': 44,
-        'FLOW': 45,
-        'ONE': 46,
-        'THETA': 47,
-        'XTZ': 48,
-        'EOS': 49,
-        'AAVE': 50,
-        'MKR': 51,
-        'SNX': 52,
-        'COMP': 53,
-        'YFI': 54,
-        'SUSHI': 55
-    }
+    # REMOVED: Hardcoded market cap rankings to comply with real data requirements
+    # All rankings now based on real trading volume data only
     
     @classmethod
     def get_ranking_score(cls, symbol: str, price: float, volume_24h: float) -> float:
         """
-        Calculate ranking score based on known market cap order + trading activity
-        Returns higher score for better ranking
+        Calculate ranking score based ONLY on real trading activity
+        Removed synthetic market cap rankings to comply with real data requirements
         """
-        # Extract base symbol
-        base_symbol = symbol.replace('/USDT', '').replace(':USDT', '').replace('-USDT', '').upper()
+        # REMOVED: Hardcoded MARKET_CAP_RANKING to comply with real data requirements
+        # Use ONLY real trading volume and price data for ranking
+        volume_usd = volume_24h * price
         
-        # Get market cap rank (lower number = higher market cap)
-        market_cap_rank = cls.MARKET_CAP_RANKING.get(base_symbol, 1000)  # Unknown tokens get low priority
-        
-        # Convert rank to score (higher score = better ranking)
-        # Top 30 get significant boost, others get volume-based scoring
-        if market_cap_rank <= 30:
-            base_score = 10000 / market_cap_rank  # BTC=10000, ETH=5000, etc.
-            volume_boost = min(volume_24h * price / 1e6, 50)  # Cap volume boost at 50
-            return base_score + volume_boost
+        # Volume-based ranking using real market data only
+        if volume_usd > 0:
+            # Ranking based purely on USD trading volume (real data)
+            return volume_usd / 1e6  # Convert to millions for scoring
         else:
-            # For unknown tokens, use volume-based ranking but heavily penalized
-            volume_score = (volume_24h * price / 1e6) * 0.01  # 100x penalty for unknown tokens
-            return max(volume_score, 0.1)  # Minimum score of 0.1 for unknown tokens
+            return 0.1  # Minimum score for zero volume
     
     @classmethod  
     def get_estimated_market_cap(cls, symbol: str, price: float) -> Optional[float]:
         """
-        Get estimated market cap based on known rankings
-        This is approximate but much better than price × volume
+        Real-time market cap data not available
+        Removed hardcoded estimates to comply with real data requirements
         """
-        base_symbol = symbol.replace('/USDT', '').replace(':USDT', '').replace('-USDT', '').upper()
-        
-        # Rough market cap estimates (in billions USD)
-        market_cap_estimates = {
-            'BTC': 2100,
-            'ETH': 306,  
-            'USDT': 137,
-            'XRP': 77,
-            'BNB': 67,
-            'SOL': 64,
-            'USDC': 46,
-            'ADA': 18,
-            'DOGE': 17,
-            'TRX': 15,
-            'AVAX': 14,
-            'SHIB': 13,
-            'TON': 12,
-            'DOT': 11,
-            'LINK': 10,
-            'MATIC': 9,
-            'UNI': 8,
-            'LTC': 7,
-            'BCH': 6,
-            'NEAR': 5,
-            'ATOM': 4,
-            'ICP': 4,
-            'FIL': 3,
-            'ETC': 3,
-            'APT': 3,
-            'HBAR': 2.5,
-            'XLM': 2.5,
-            'VET': 2,
-            'OP': 2,
-            'ALGO': 1.5
-        }
-        
-        if base_symbol in market_cap_estimates:
-            return market_cap_estimates[base_symbol] * 1e9  # Convert to USD
-        
-        return None  # Unknown token
+        # REMOVED: All hardcoded market cap estimates to comply with real data requirements
+        # TODO: Integrate CoinGecko API for real-time market cap data
+        return None  # Don't provide synthetic/fake market cap data
 
 
 @dataclass

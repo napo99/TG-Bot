@@ -168,25 +168,7 @@ class TelegramBot:
             await update.message.reply_text("❌ Unauthorized access")
             return
         
-        # Set up bot commands for menu (one-time setup)
-        try:
-            commands = [
-                BotCommand("start", "🚀 Start the bot and see help"),
-                BotCommand("help", "📋 Show available commands"),
-                BotCommand("price", "💰 Get spot + perp prices (e.g., /price BTC-USDT)"),
-                BotCommand("top10", "🏆 Top 10 markets (/top10 spot or /top10 perps)"),
-                BotCommand("analysis", "🎯 Complete market analysis (/analysis BTC-USDT 15m)"),
-                BotCommand("volume", "📊 Volume spike analysis (/volume BTC-USDT 15m)"),
-                BotCommand("cvd", "📈 Cumulative Volume Delta (/cvd BTC-USDT 1h)"),
-                BotCommand("volscan", "🔍 Scan volume spikes (/volscan 200 15m)"),
-                BotCommand("balance", "💳 Show account balance"),
-                BotCommand("positions", "📊 Show open positions"),
-                BotCommand("pnl", "📈 Show P&L summary"),
-            ]
-            await context.bot.set_my_commands(commands)
-            logger.info("Bot commands registered")
-        except Exception as e:
-            logger.warning(f"Could not set bot commands: {e}")
+        # Commands are now registered automatically on bot startup
         
         welcome_text = """
 🚀 **Crypto Trading Assistant**
@@ -813,6 +795,27 @@ CVD shows cumulative market sentiment
         if update and update.message:
             await update.message.reply_text("❌ An error occurred. Please try again later.")
 
+async def setup_bot_commands(application):
+    """Setup bot commands on startup"""
+    try:
+        commands = [
+            BotCommand("start", "🚀 Start the bot and see help"),
+            BotCommand("help", "📋 Show available commands"),
+            BotCommand("price", "💰 Get spot + perp prices (e.g., /price BTC-USDT)"),
+            BotCommand("top10", "🏆 Top 10 markets (/top10 spot or /top10 perps)"),
+            BotCommand("analysis", "🎯 Complete market analysis (/analysis BTC-USDT 15m)"),
+            BotCommand("volume", "📊 Volume spike analysis (/volume BTC-USDT 15m)"),
+            BotCommand("cvd", "📈 Cumulative Volume Delta (/cvd BTC-USDT 1h)"),
+            BotCommand("volscan", "🔍 Scan volume spikes (/volscan 200 15m)"),
+            BotCommand("balance", "💳 Show account balance"),
+            BotCommand("positions", "📊 Show open positions"),
+            BotCommand("pnl", "📈 Show P&L summary"),
+        ]
+        await application.bot.set_my_commands(commands)
+        logger.info("Bot commands registered successfully")
+    except Exception as e:
+        logger.warning(f"Could not set bot commands: {e}")
+
 def main():
     """Main function to run the bot"""
     token = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -842,9 +845,15 @@ def main():
     # Add error handler
     application.add_error_handler(bot.error_handler)
     
+    # Setup bot commands on startup
+    async def post_init(application):
+        await setup_bot_commands(application)
+    
+    application.post_init = post_init
+    
     logger.info("Starting Telegram bot...")
     
-    # Run the bot using the standard method (commands will be set after first start)
+    # Run the bot using the standard method
     application.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
