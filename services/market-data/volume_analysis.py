@@ -33,6 +33,9 @@ class CVDData:
     divergence_detected: bool
     price_trend: str
     timestamp: datetime
+    # Point-in-time delta (current candle only)
+    current_delta: float
+    current_delta_usd: float
 
 @dataclass
 class VolumeAlert:
@@ -226,6 +229,7 @@ class VolumeAnalysisEngine:
             
             # Calculate CVD
             cvd_values = []
+            delta_values = []
             cumulative_cvd = 0
             
             for candle in ohlcv:
@@ -246,10 +250,18 @@ class VolumeAnalysisEngine:
                 
                 cumulative_cvd += volume_delta
                 cvd_values.append(cumulative_cvd)
+                delta_values.append(volume_delta)
             
             current_cvd = cvd_values[-1]
             cvd_24h_ago = cvd_values[0] if len(cvd_values) > 0 else 0
             cvd_change_24h = current_cvd - cvd_24h_ago
+            
+            # Get current delta (point-in-time)
+            current_delta = delta_values[-1] if delta_values else 0
+            
+            # Get current price for USD conversion
+            current_price = ohlcv[-1][4]  # Close price of latest candle
+            current_delta_usd = current_delta * current_price
             
             # Determine CVD trend
             cvd_trend = self._analyze_cvd_trend(cvd_values)
@@ -269,7 +281,9 @@ class VolumeAnalysisEngine:
                 cvd_trend=cvd_trend,
                 divergence_detected=bool(divergence_detected),
                 price_trend=price_trend,
-                timestamp=datetime.now()
+                timestamp=datetime.now(),
+                current_delta=float(round(current_delta, 2)),
+                current_delta_usd=float(round(current_delta_usd, 2))
             )
             
         except Exception as e:
@@ -361,7 +375,9 @@ class VolumeAnalysisEngine:
             cvd_trend="NEUTRAL",
             divergence_detected=False,
             price_trend="NEUTRAL",
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
+            current_delta=0,
+            current_delta_usd=0
         )
 
 # Example usage:

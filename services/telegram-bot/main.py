@@ -673,6 +673,7 @@ CVD shows cumulative market sentiment
             tech_data = data.get('technical_indicators', {})
             sentiment = data.get('market_sentiment', {})
             oi_data = data.get('oi_data', {})
+            long_short_data = data.get('long_short_data', {})
             
             # Format price and change
             current_price = price_data.get('current_price', 0)
@@ -700,10 +701,13 @@ CVD shows cumulative market sentiment
             cvd_trend = cvd_data.get('cvd_trend', 'NEUTRAL')
             cvd_current = cvd_data.get('current_cvd', 0)
             cvd_change = cvd_data.get('cvd_change_24h', 0)
+            current_delta = cvd_data.get('current_delta', 0)
+            current_delta_usd = cvd_data.get('current_delta_usd', 0)
             divergence = cvd_data.get('divergence_detected', False)
             
             cvd_emoji = "🟢📈" if cvd_trend == 'BULLISH' else "🔴📉" if cvd_trend == 'BEARISH' else "⚪➡️"
             cvd_sign = "+" if cvd_change >= 0 else ""
+            delta_sign = "+" if current_delta >= 0 else ""
             
             # Technical indicators
             rsi = tech_data.get('rsi_14')
@@ -726,18 +730,46 @@ CVD shows cumulative market sentiment
             # Build message
             base_token = symbol.split('/')[0]
             
+            # Format volume in tokens first
+            current_volume_tokens = volume_data.get('current_volume', 0)
+            
             message = f"""🎯 **MARKET ANALYSIS - {symbol}** ({timeframe})
 
 💰 **PRICE**: ${current_price:,.2f} {change_emoji} {change_sign}{change_24h:.1f}%
-📊 **VOLUME**: {vol_emoji} {spike_level} ({spike_pct:+.0f}%, ${vol_usd/1e6:.1f}M)
-📈 **CVD**: {cvd_emoji} {cvd_trend} ({cvd_sign}{cvd_change:,.0f})"""
+📊 **VOLUME**: {vol_emoji} {spike_level} {current_volume_tokens:,.0f} {base_token} ({spike_pct:+.0f}%, ${vol_usd/1e6:.1f}M)
+📈 **CVD**: {cvd_emoji} {cvd_trend} {cvd_change:,.0f} {base_token} (${cvd_change * current_price / 1e6:.1f}M)
+📊 **DELTA**: {delta_sign}{current_delta:,.0f} {base_token} (${current_delta_usd/1e6:.2f}M)"""
 
-            # Add OI data for perps
+            # Add OI and Long/Short data for perps
             if oi_data and oi_data.get('open_interest'):
+                oi_tokens = oi_data.get('open_interest', 0)
                 oi_usd = oi_data.get('open_interest_usd', 0)
                 funding = oi_data.get('funding_rate', 0) * 100
                 funding_sign = "+" if funding >= 0 else ""
-                message += f"\n📈 **OI**: ${oi_usd/1e6:.0f}M | 💸 Funding: {funding_sign}{funding:.4f}%"
+                message += f"\n📈 **OI**: {oi_tokens:,.0f} {base_token} (${oi_usd/1e6:.0f}M) | 💸 Funding: {funding_sign}{funding:.4f}%"
+                
+                # Add institutional vs retail long/short data
+                if long_short_data:
+                    inst_data = long_short_data.get('institutional', {})
+                    retail_data = long_short_data.get('retail', {})
+                    
+                    if inst_data:
+                        inst_longs = inst_data.get('net_longs_tokens', 0)
+                        inst_shorts = inst_data.get('net_shorts_tokens', 0)
+                        inst_longs_usd = inst_data.get('net_longs_usd', 0)
+                        inst_shorts_usd = inst_data.get('net_shorts_usd', 0)
+                        inst_ratio = inst_data.get('long_ratio', 1)
+                        
+                        message += f"\n🏛️ **INSTITUTIONAL**: L: {inst_longs:,.0f} {base_token} (${inst_longs_usd/1e6:.0f}M) | S: {inst_shorts:,.0f} {base_token} (${inst_shorts_usd/1e6:.0f}M) | Ratio: {inst_ratio:.2f}"
+                    
+                    if retail_data:
+                        ret_longs = retail_data.get('net_longs_tokens', 0)
+                        ret_shorts = retail_data.get('net_shorts_tokens', 0)
+                        ret_longs_usd = retail_data.get('net_longs_usd', 0)
+                        ret_shorts_usd = retail_data.get('net_shorts_usd', 0)
+                        ret_ratio = retail_data.get('long_ratio', 1)
+                        
+                        message += f"\n🏪 **RETAIL**: L: {ret_longs:,.0f} {base_token} (${ret_longs_usd/1e6:.0f}M) | S: {ret_shorts:,.0f} {base_token} (${ret_shorts_usd/1e6:.0f}M) | Ratio: {ret_ratio:.2f}"
 
             message += f"""
 
