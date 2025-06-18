@@ -882,7 +882,9 @@ class MarketDataService:
                         'volatility_24h': tech_indicators.volatility_24h,
                         'bb_upper': tech_indicators.bb_upper,
                         'bb_middle': tech_indicators.bb_middle,
-                        'bb_lower': tech_indicators.bb_lower
+                        'bb_lower': tech_indicators.bb_lower,
+                        'volatility_15m': tech_indicators.volatility_15m,
+                        'atr_usd': tech_indicators.atr_usd
                     },
                     
                     # Market sentiment analysis
@@ -953,6 +955,11 @@ class MarketDataService:
         
         base_token = long_short_data.symbol.split('/')[0]
         
+        # Calculate smart money edge
+        institutional_long_pct = long_short_data.institutional_long_pct
+        retail_long_pct = long_short_data.retail_long_pct
+        smart_money_edge = institutional_long_pct - retail_long_pct
+        
         return {
             'symbol': long_short_data.symbol,
             'timestamp': long_short_data.timestamp,
@@ -980,9 +987,10 @@ class MarketDataService:
                 'net_shorts_usd': float(long_short_data.net_shorts_retail_usd)
             },
             
-            # Summary
+            # Summary with smart money edge
             'total_oi_tokens': float(long_short_data.total_oi_tokens),
-            'token_price': float(long_short_data.token_price)
+            'token_price': float(long_short_data.token_price),
+            'smart_money_edge': float(round(smart_money_edge, 1))
         }
     
     def _analyze_market_sentiment(self, combined_price, volume_spike, cvd_data, tech_indicators) -> Dict[str, Any]:

@@ -19,6 +19,9 @@ class TechnicalIndicators:
     bb_middle: Optional[float] = None
     current_price: Optional[float] = None
     volatility_24h: Optional[float] = None
+    # New fields for enhanced template
+    volatility_15m: Optional[float] = None
+    atr_usd: Optional[float] = None
 
 class IndicatorCalculator:
     """Calculate technical indicators from OHLCV data"""
@@ -104,6 +107,42 @@ class IndicatorCalculator:
         }
     
     @staticmethod
+    def calculate_current_volatility(ohlcv_data: List[List[float]]) -> Optional[float]:
+        """Calculate volatility for current candle (15m timeframe)"""
+        if not ohlcv_data or len(ohlcv_data) == 0:
+            return None
+        
+        current_candle = ohlcv_data[-1]
+        timestamp, open_price, high, low, close, volume = current_candle
+        
+        if open_price <= 0:
+            return None
+        
+        # Calculate volatility as percentage of price range relative to open
+        volatility = ((high - low) / open_price) * 100
+        return round(volatility, 2)
+    
+    @staticmethod 
+    def calculate_atr_usd(ohlcv_data: List[List[float]], current_price: float, period: int = 14) -> Optional[float]:
+        """Calculate ATR in USD value terms"""
+        if len(ohlcv_data) < period + 1:
+            return None
+        
+        # Extract OHLC data
+        high_prices = [candle[2] for candle in ohlcv_data]
+        low_prices = [candle[3] for candle in ohlcv_data]
+        close_prices = [candle[4] for candle in ohlcv_data]
+        
+        # Calculate ATR using existing method
+        atr = IndicatorCalculator.calculate_atr(high_prices, low_prices, close_prices, period)
+        
+        if atr is None:
+            return None
+        
+        # ATR is already in price terms, so it's already in USD for USD pairs
+        return round(atr, 2)
+    
+    @staticmethod
     def calculate_volatility(prices: List[float], period: int = 24) -> Optional[float]:
         """Calculate price volatility (standard deviation of returns)"""
         if len(prices) < period + 1:
@@ -136,8 +175,27 @@ class TechnicalAnalysisService:
             
             ex = self.exchange_manager.exchanges[exchange]
             
-            # Fetch last 100 candles for calculations
-            ohlcv = await ex.fetch_ohlcv(symbol, timeframe, limit=100)
+            # Use timeframe-appropriate periods for VWAP calculation
+            # This matches trading app behavior better than fixed 100 candles
+            vwap_periods = {
+                '1m': 60,      # 1 hour - responsive for scalping
+                '3m': 40,      # 2 hours - short-term 
+                '5m': 48,      # 4 hours - balanced
+                '15m': 24,     # 6 hours - session view (USER'S CHOICE)
+                '30m': 24,     # 12 hours - extended session
+                '1h': 24,      # 24 hours - daily view
+                '2h': 12,      # 24 hours - daily equivalent
+                '4h': 6,       # 24 hours - daily equivalent
+                '6h': 4,       # 24 hours - daily equivalent
+                '12h': 2,      # 24 hours - daily equivalent
+                '1d': 7,       # 1 week - longer term
+            }
+            
+            # Get appropriate period for this timeframe, fallback to 50 if not specified
+            vwap_limit = vwap_periods.get(timeframe, 50)
+            
+            # Fetch OHLCV data with timeframe-appropriate period
+            ohlcv = await ex.fetch_ohlcv(symbol, timeframe, limit=vwap_limit)
             
             if len(ohlcv) < 20:  # Need minimum data for calculations
                 return TechnicalIndicators(symbol=symbol, timeframe=timeframe)
@@ -154,10 +212,17 @@ class TechnicalAnalysisService:
             calc = IndicatorCalculator()
             
             rsi = calc.calculate_rsi(closes)
+            # VWAP now uses timeframe-appropriate periods:
+            # 15m timeframe = 24 candles = 6 hours (matches trading apps ~$104,850)
             vwap = calc.calculate_vwap(highs, lows, closes, volumes)
             atr = calc.calculate_atr(highs, lows, closes)
             bb = calc.calculate_bollinger_bands(closes)
             volatility = calc.calculate_volatility(closes)
+            
+            # Calculate new indicators for enhanced template
+            current_price = closes[-1] if closes else None
+            volatility_15m = calc.calculate_current_volatility(ohlcv)
+            atr_usd = calc.calculate_atr_usd(ohlcv, current_price) if current_price else None
             
             return TechnicalIndicators(
                 symbol=symbol,
@@ -168,8 +233,10 @@ class TechnicalAnalysisService:
                 bb_upper=bb['upper'],
                 bb_middle=bb['middle'],
                 bb_lower=bb['lower'],
-                current_price=closes[-1] if closes else None,
-                volatility_24h=volatility
+                current_price=current_price,
+                volatility_24h=volatility,
+                volatility_15m=volatility_15m,
+                atr_usd=atr_usd
             )
             
         except Exception as e:

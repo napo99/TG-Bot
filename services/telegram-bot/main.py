@@ -713,6 +713,8 @@ CVD shows cumulative market sentiment
             rsi = tech_data.get('rsi_14')
             vwap = tech_data.get('vwap')
             volatility = tech_data.get('volatility_24h')
+            volatility_15m = tech_data.get('volatility_15m', 0)
+            atr_usd = tech_data.get('atr_usd', 0)
             
             # Market sentiment
             control = sentiment.get('market_control', 'NEUTRAL')
@@ -727,18 +729,18 @@ CVD shows cumulative market sentiment
             else:
                 control_emoji = "⚪🦀"
             
-            # Build message
+            # Build message in new template format
             base_token = symbol.split('/')[0]
-            
-            # Format volume in tokens first
             current_volume_tokens = volume_data.get('current_volume', 0)
             
-            message = f"""🎯 **MARKET ANALYSIS - {symbol}** ({timeframe})
+            # Start with main analysis
+            message = f"""🎯 MARKET ANALYSIS - {symbol} ({timeframe})
 
-💰 **PRICE**: ${current_price:,.2f} {change_emoji} {change_sign}{change_24h:.1f}%
-📊 **VOLUME**: {vol_emoji} {spike_level} {current_volume_tokens:,.0f} {base_token} ({spike_pct:+.0f}%, ${vol_usd/1e6:.1f}M)
-📈 **CVD**: {cvd_emoji} {cvd_trend} {cvd_change:,.0f} {base_token} (${cvd_change * current_price / 1e6:.1f}M)
-📊 **DELTA**: {delta_sign}{current_delta:,.0f} {base_token} (${current_delta_usd/1e6:.2f}M)"""
+• PRICE: ${current_price:,.2f} {change_emoji} {change_sign}{change_24h:.1f}%
+• VOLUME: {vol_emoji} {spike_level} {current_volume_tokens:,.0f} {base_token} ({spike_pct:+.0f}%, ${vol_usd/1e6:.1f}M)
+• CVD: {cvd_emoji} {cvd_trend} {cvd_change:,.0f} {base_token} (${cvd_change * current_price / 1e6:.1f}M)
+• DELTA: {delta_sign}{current_delta:,.0f} {base_token} (${current_delta_usd/1e6:.2f}M)
+"""
 
             # Add OI and Long/Short data for perps
             if oi_data and oi_data.get('open_interest'):
@@ -746,34 +748,41 @@ CVD shows cumulative market sentiment
                 oi_usd = oi_data.get('open_interest_usd', 0)
                 funding = oi_data.get('funding_rate', 0) * 100
                 funding_sign = "+" if funding >= 0 else ""
-                message += f"\n📈 **OI**: {oi_tokens:,.0f} {base_token} (${oi_usd/1e6:.0f}M) | 💸 Funding: {funding_sign}{funding:.4f}%"
+                funding_direction = "longs pay shorts" if funding >= 0 else "shorts pay longs"
+                
+                message += f"""• OI: {oi_tokens:,.0f} {base_token} (${oi_usd/1e6:.0f}M) 
+• Funding: {funding_sign}{funding:.4f}% ({funding_direction})"""
                 
                 # Add institutional vs retail long/short data
                 if long_short_data:
                     inst_data = long_short_data.get('institutional', {})
                     retail_data = long_short_data.get('retail', {})
                     
-                    if inst_data:
+                    if inst_data and retail_data:
                         inst_longs = inst_data.get('net_longs_tokens', 0)
                         inst_shorts = inst_data.get('net_shorts_tokens', 0)
                         inst_longs_usd = inst_data.get('net_longs_usd', 0)
                         inst_shorts_usd = inst_data.get('net_shorts_usd', 0)
                         inst_ratio = inst_data.get('long_ratio', 1)
                         
-                        message += f"\n🏛️ **INSTITUTIONAL**: L: {inst_longs:,.0f} {base_token} (${inst_longs_usd/1e6:.0f}M) | S: {inst_shorts:,.0f} {base_token} (${inst_shorts_usd/1e6:.0f}M) | Ratio: {inst_ratio:.2f}"
-                    
-                    if retail_data:
                         ret_longs = retail_data.get('net_longs_tokens', 0)
                         ret_shorts = retail_data.get('net_shorts_tokens', 0)
                         ret_longs_usd = retail_data.get('net_longs_usd', 0)
                         ret_shorts_usd = retail_data.get('net_shorts_usd', 0)
                         ret_ratio = retail_data.get('long_ratio', 1)
                         
-                        message += f"\n🏪 **RETAIL**: L: {ret_longs:,.0f} {base_token} (${ret_longs_usd/1e6:.0f}M) | S: {ret_shorts:,.0f} {base_token} (${ret_shorts_usd/1e6:.0f}M) | Ratio: {ret_ratio:.2f}"
+                        message += f"""
+• Smart Money: 
+    L: {inst_longs:,.0f} {base_token} (${inst_longs_usd/1e6:.0f}M) | S: {inst_shorts:,.0f} {base_token} (${inst_shorts_usd/1e6:.0f}M) 
+    Ratio: {inst_ratio:.2f}
+• All Participants: 
+    L: {ret_longs:,.0f} {base_token} (${ret_longs_usd/1e6:.0f}M) | S: {ret_shorts:,.0f} {base_token} (${ret_shorts_usd/1e6:.0f}M)
+    Ratio: {ret_ratio:.2f}"""
 
+            # Add technical section
             message += f"""
 
-📉 **TECHNICAL**:"""
+📉 TECHNICAL:"""
             
             if rsi:
                 rsi_status = "Overbought" if rsi > 70 else "Oversold" if rsi < 30 else "Neutral"
@@ -783,38 +792,50 @@ CVD shows cumulative market sentiment
                 vwap_status = "Above VWAP ✅" if current_price > vwap else "Below VWAP ❌"
                 message += f"\n• VWAP: ${vwap:,.2f} ({vwap_status})"
             
-            if volatility:
-                vol_level = "HIGH" if volatility > 5 else "MODERATE" if volatility > 2 else "LOW"
-                message += f"\n• Volatility: {volatility:.1f}% ({vol_level})"
+            # Add new volatility and ATR line
+            if volatility_15m and atr_usd:
+                message += f"\n• Volatility: {volatility_15m:.1f}% | ATR: ${atr_usd:,.0f}"
             
-            message += f"\n• Rel Volume: {rel_volume:.1f}x"
+            rel_volume_pct = int(rel_volume * 100)
+            message += f"\n• Rel Volume: {rel_volume:.1f}x ({rel_volume_pct}% of normal)"
 
+            # Enhanced market control section
             message += f"""
+   
 
-🎯 **MARKET CONTROL**:
-{control_emoji} **{control} IN CONTROL** ({control_strength:.0f}% confidence)
-⚡ **Aggression**: {aggression}"""
+🎯 MARKET CONTROL:"""
+            
+            # Basic control info
+            message += f"\n• {control} IN CONTROL ({control_strength:.0f}% confidence)"
+            message += f"\n• Aggression: {aggression}"
+            
+            # Add detailed smart money analysis if available
+            if long_short_data:
+                inst_data = long_short_data.get('institutional', {})
+                retail_data = long_short_data.get('retail', {})
+                smart_money_edge = long_short_data.get('smart_money_edge', 0)
+                
+                if inst_data and retail_data:
+                    inst_long_pct = inst_data.get('long_pct', 50)
+                    inst_short_pct = inst_data.get('short_pct', 50)
+                    ret_long_pct = retail_data.get('long_pct', 50)
+                    ret_short_pct = retail_data.get('short_pct', 50)
+                    inst_ratio = inst_data.get('long_ratio', 1)
+                    ret_ratio = retail_data.get('long_ratio', 1)
+                    
+                    message += f"\n• SMART MONEY: {inst_long_pct:.1f}% Long (vs {inst_short_pct:.1f}% Short) | Ratio: {inst_ratio:.2f}"
+                    message += f"\n• MARKET AVERAGE: {ret_long_pct:.1f}% Long (vs {ret_short_pct:.1f}% Short) | Ratio: {ret_ratio:.2f}"
+                    
+                    edge_sign = "+" if smart_money_edge >= 0 else ""
+                    edge_direction = "more bullish" if smart_money_edge > 0 else "more bearish" if smart_money_edge < 0 else "neutral vs"
+                    message += f"\n• EDGE: Smart money {edge_sign}{smart_money_edge:.1f}% {edge_direction} than market"
 
-            if divergence:
-                message += f"\n⚠️ **CVD-Price Divergence Detected!**"
-
-            # Add key insights
-            insights = []
-            if spike_level in ['HIGH', 'EXTREME']:
-                insights.append(f"🔥 Unusual {spike_level.lower()} volume activity")
-            if divergence:
-                insights.append("⚠️ Watch for potential reversal")
-            if rsi and rsi > 70:
-                insights.append("📊 RSI suggests overbought conditions")
-            elif rsi and rsi < 30:
-                insights.append("📊 RSI suggests oversold conditions")
-
-            if insights:
-                message += f"\n\n💡 **Key Insights**:\n"
-                for insight in insights[:3]:  # Limit to 3 insights
-                    message += f"• {insight}\n"
-
-            message += f"\n🕐 {datetime.now().strftime('%H:%M:%S')} UTC"
+            # Add dual timezone timestamp
+            import pytz
+            utc_time = datetime.now(pytz.UTC)
+            sgt_time = utc_time.astimezone(pytz.timezone('Asia/Singapore'))
+            
+            message += f"\n\n🕐 {utc_time.strftime('%H:%M:%S')} UTC / {sgt_time.strftime('%H:%M:%S')} SGT"
 
             await update.message.reply_text(message, parse_mode='Markdown')
         else:
