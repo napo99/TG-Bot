@@ -764,20 +764,90 @@ CVD shows cumulative market sentiment
                 daily_progress = daily_context.get('daily_progress_pct', 0)
                 sessions_done = daily_context.get('sessions_completed', 0)
                 
+                # Get additional session info for enhanced display
+                session_start = current_session_info.get('start_time', '00:00')
+                session_end = current_session_info.get('end_time', '24:00')
+                
                 # Format session name for display
                 session_display = session_name.replace('_', ' ').title()
                 
+                # Calculate USD values
+                session_vol_usd = session_vol * current_price
+                session_rate_usd = session_rate * current_price
+                session_avg = session_vol / session_rel if session_rel > 0 else 1
+                rate_avg = session_rate / session_rate_rel if session_rate_rel > 0 else 1
+                rate_avg_usd = rate_avg * current_price
+                
+                # Calculate percentage deviation for volume spike
+                volume_deviation_pct = ((session_rel - 1) * 100) if session_rel > 0 else 0
+                
+                # Smart deviation detection with emojis
+                # Volume Spike Classification
+                if volume_deviation_pct >= 500:  # 6x or higher
+                    volume_emoji = "🚨🔥"
+                    volume_label = f"{session_vol:,.0f} {base_token} (${session_vol_usd/1e6:.0f}M) - {volume_deviation_pct:.0f}% above 7-day baseline"
+                elif volume_deviation_pct >= 300:  # 4x or higher
+                    volume_emoji = "🔥🔥"
+                    volume_label = f"{session_vol:,.0f} {base_token} (${session_vol_usd/1e6:.0f}M) - {volume_deviation_pct:.0f}% above baseline"
+                elif volume_deviation_pct >= 100:  # 2x or higher
+                    volume_emoji = "🔥"
+                    volume_label = f"{session_vol:,.0f} {base_token} (${session_vol_usd/1e6:.0f}M) - {volume_deviation_pct:.0f}% above baseline"
+                elif volume_deviation_pct >= 50:   # 1.5x or higher
+                    volume_emoji = "⚡"
+                    volume_label = f"{session_vol:,.0f} {base_token} (${session_vol_usd/1e6:.0f}M) - {volume_deviation_pct:.0f}% above baseline"
+                elif volume_deviation_pct >= 0:    # Above baseline
+                    volume_emoji = "✅"
+                    volume_label = f"{session_vol:,.0f} {base_token} (${session_vol_usd/1e6:.0f}M) - {volume_deviation_pct:.0f}% above baseline"
+                else:  # Below baseline
+                    volume_emoji = "😴"
+                    volume_label = f"{session_vol:,.0f} {base_token} (${session_vol_usd/1e6:.0f}M) - {abs(volume_deviation_pct):.0f}% below baseline"
+                
+                # Market Pace Classification
+                if session_rate_rel >= 5.0:
+                    pace_level = "EXTREME"
+                    pace_emoji = "🚨"
+                elif session_rate_rel >= 3.0:
+                    pace_level = "HIGH"
+                    pace_emoji = "🔥"
+                elif session_rate_rel >= 1.5:
+                    pace_level = "ELEVATED"
+                    pace_emoji = "⚡"
+                elif session_rate_rel >= 0.5:
+                    pace_level = "NORMAL"
+                    pace_emoji = "✅"
+                else:
+                    pace_level = "LOW"
+                    pace_emoji = "😴"
+                
+                # Volume Pattern Classification
+                share_deviation = session_share - session_typical
+                if share_deviation >= 50:
+                    pattern_description = "Heavy early activity"
+                    pattern_emoji = "📈"
+                elif share_deviation >= 25:
+                    pattern_description = "Front-loaded volume"
+                    pattern_emoji = "⚡"
+                elif share_deviation >= -25:
+                    pattern_description = "Normal distribution"
+                    pattern_emoji = "✅"
+                elif share_deviation >= -50:
+                    pattern_description = "Back-loaded pattern"
+                    pattern_emoji = "📉"
+                else:
+                    pattern_description = "Light early activity"
+                    pattern_emoji = "😴"
+                
                 message += f"""
-📊 SESSION ANALYSIS:
-• Current: {session_display} (Hour {session_hour} of {session_total})
-• Session Vol: {session_vol:,.0f} {base_token} ({session_rel:.1f}x vs {session_vol/session_rel:,.0f} avg)
-• Session Rate: {session_rate:,.0f} {base_token}/hr ({session_rate_rel:.1f}x vs {session_rate/session_rate_rel:,.0f} avg)
-• Session Share: {session_share:.0f}% of daily (vs {session_typical:.0f}% typical)
+📊 SESSION SNAPSHOT:
+• {session_display} Trading: Hour {session_hour}/{session_total} ({session_start}-{session_end} UTC) ⏰
+• Volume Spike: {volume_label} {volume_emoji}
+• Market Pace: {pace_level} at ${session_rate_usd/1e6:.1f}M/hr vs ${rate_avg_usd/1e6:.1f}M/hr normal {pace_emoji}
+• Volume Pattern: {pattern_description} ({session_share:.0f}% vs {session_typical:.0f}% typical) {pattern_emoji}
 
 📈 DAILY CONTEXT:
-• Day Volume: {daily_vol:,.0f} {base_token} ({sessions_done} sessions tracked)
-• Daily Average: {daily_avg:,.0f} {base_token} (7-day baseline)
-• Progress: {daily_progress:.0f}% vs {100*(daily_vol/daily_avg):.0f}% typical at this hour"""
+• Day Volume: {daily_vol:,.0f} {base_token} (${daily_vol*current_price/1e6:.0f}M) - {sessions_done} sessions tracked
+• Daily Average: {daily_avg:,.0f} {base_token} (${daily_avg*current_price/1e6:.0f}M) - 7-day baseline
+• Progress: {daily_progress:.0f}% vs {100*(daily_vol/daily_avg) if daily_avg > 0 else 0:.0f}% typical at this hour"""
 
             # Add OI and Long/Short data for perps
             if oi_data and oi_data.get('open_interest'):
