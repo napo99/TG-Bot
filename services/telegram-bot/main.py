@@ -674,6 +674,7 @@ CVD shows cumulative market sentiment
             sentiment = data.get('market_sentiment', {})
             oi_data = data.get('oi_data', {})
             long_short_data = data.get('long_short_data', {})
+            session_data = data.get('session_analysis', {})
             
             # Format price and change
             current_price = price_data.get('current_price', 0)
@@ -741,6 +742,42 @@ CVD shows cumulative market sentiment
 • CVD: {cvd_emoji} {cvd_trend} {cvd_change:,.0f} {base_token} (${cvd_change * current_price / 1e6:.1f}M)
 • DELTA: {delta_sign}{current_delta:,.0f} {base_token} (${current_delta_usd/1e6:.2f}M)
 """
+
+            # Add session volume analysis
+            if session_data:
+                current_session_info = session_data.get('current_session', {})
+                session_metrics = session_data.get('session_metrics', {})
+                daily_context = session_data.get('daily_context', {})
+                
+                session_name = current_session_info.get('name', 'unknown')
+                session_hour = current_session_info.get('current_hour', 1)
+                session_total = current_session_info.get('total_hours', 1)
+                session_vol = current_session_info.get('current_volume', 0)
+                session_rel = session_metrics.get('session_rel_volume', 1)
+                session_rate = session_metrics.get('session_hourly_rate', 0)
+                session_rate_rel = session_metrics.get('session_hourly_rel', 1)
+                session_share = session_metrics.get('session_share_current', 0)
+                session_typical = session_metrics.get('session_share_typical', 0)
+                
+                daily_vol = daily_context.get('current_daily_volume', 0)
+                daily_avg = daily_context.get('daily_avg_7day', 0)
+                daily_progress = daily_context.get('daily_progress_pct', 0)
+                sessions_done = daily_context.get('sessions_completed', 0)
+                
+                # Format session name for display
+                session_display = session_name.replace('_', ' ').title()
+                
+                message += f"""
+📊 SESSION ANALYSIS:
+• Current: {session_display} (Hour {session_hour} of {session_total})
+• Session Vol: {session_vol:,.0f} {base_token} ({session_rel:.1f}x vs {session_vol/session_rel:,.0f} avg)
+• Session Rate: {session_rate:,.0f} {base_token}/hr ({session_rate_rel:.1f}x vs {session_rate/session_rate_rel:,.0f} avg)
+• Session Share: {session_share:.0f}% of daily (vs {session_typical:.0f}% typical)
+
+📈 DAILY CONTEXT:
+• Day Volume: {daily_vol:,.0f} {base_token} ({sessions_done} sessions tracked)
+• Daily Average: {daily_avg:,.0f} {base_token} (7-day baseline)
+• Progress: {daily_progress:.0f}% vs {100*(daily_vol/daily_avg):.0f}% typical at this hour"""
 
             # Add OI and Long/Short data for perps
             if oi_data and oi_data.get('open_interest'):

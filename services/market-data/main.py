@@ -9,6 +9,7 @@ from loguru import logger
 from dotenv import load_dotenv
 from volume_analysis import VolumeAnalysisEngine, VolumeSpike, CVDData
 from technical_indicators import TechnicalAnalysisService, TechnicalIndicators
+from session_volume import SessionVolumeEngine, SessionAnalysis
 
 load_dotenv()
 
@@ -550,6 +551,7 @@ class MarketDataService:
             await self.exchange_manager._init_exchanges()
             self.volume_engine = VolumeAnalysisEngine(self.exchange_manager)
             self.technical_service = TechnicalAnalysisService(self.exchange_manager)
+            self.session_volume_engine = SessionVolumeEngine(self.exchange_manager)
             self._initialized = True
             logger.info("Market Data Service initialized")
     
@@ -822,15 +824,16 @@ class MarketDataService:
             else:
                 raise ValueError(f"No price data available for {symbol}")
             
-            # Run remaining analysis with consistent exchange/market
+            # Run remaining analysis with consistent exchange/market (including session volume)
             tasks = [
                 self.volume_engine.detect_volume_spike(primary_symbol, timeframe, exchange=primary_exchange),
                 self.volume_engine.calculate_cvd(primary_symbol, timeframe, exchange=primary_exchange),
                 self.technical_service.get_technical_indicators(primary_symbol, timeframe, primary_exchange),
+                self.session_volume_engine.analyze_session_volume(primary_symbol, timeframe, primary_exchange),
                 self.exchange_manager.get_long_short_data(symbol) if combined_price.perp else None
             ]
             
-            volume_spike, cvd_data, tech_indicators, long_short_data = await asyncio.gather(*tasks)
+            volume_spike, cvd_data, tech_indicators, session_analysis, long_short_data = await asyncio.gather(*tasks)
             
             # Analyze market sentiment and control
             sentiment_analysis = self._analyze_market_sentiment(
@@ -890,6 +893,37 @@ class MarketDataService:
                     # Market sentiment analysis
                     'market_sentiment': sentiment_analysis,
                     
+                    # Session volume analysis
+                    'session_analysis': {
+                        'current_session': {
+                            'name': session_analysis.current_session.session_name,
+                            'start_time': session_analysis.current_session.start_time,
+                            'end_time': session_analysis.current_session.end_time,
+                            'current_volume': float(session_analysis.current_session.current_volume),
+                            'session_progress': float(session_analysis.session_rel_volume),
+                            'current_hour': session_analysis.current_session.current_hour,
+                            'total_hours': session_analysis.current_session.total_hours
+                        },
+                        'session_metrics': {
+                            'session_rel_volume': float(session_analysis.session_rel_volume),
+                            'session_hourly_rate': float(session_analysis.session_hourly_rate),
+                            'session_hourly_rel': float(session_analysis.session_hourly_rel),
+                            'session_share_current': float(session_analysis.session_share_current),
+                            'session_share_typical': float(session_analysis.session_share_typical)
+                        },
+                        'daily_context': {
+                            'current_daily_volume': float(session_analysis.daily_context.current_daily_volume),
+                            'daily_avg_7day': float(session_analysis.daily_context.daily_avg_7day),
+                            'daily_progress_pct': float(session_analysis.daily_context.daily_progress_pct),
+                            'sessions_completed': session_analysis.daily_context.sessions_completed,
+                            'estimated_daily_total': float(session_analysis.daily_context.estimated_daily_total)
+                        },
+                        'dst_info': {
+                            'is_dst_active': session_analysis.is_dst_active,
+                            'dst_adjustment': session_analysis.dst_adjustment
+                        }
+                    },
+                    
                     # Long/Short position data (for perps)
                     'long_short_data': self._format_long_short_data(long_short_data) if long_short_data else {},
                     
@@ -900,6 +934,53 @@ class MarketDataService:
             
         except Exception as e:
             logger.error(f"Error in comprehensive analysis for {symbol}: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    async def handle_session_volume_request(self, symbol: str, timeframe: str = '15m', exchange: str = None) -> Dict[str, Any]:
+        """Handle session volume analysis request"""
+        try:
+            await self.initialize()
+            session_analysis = await self.session_volume_engine.analyze_session_volume(symbol, timeframe, exchange)
+            
+            return {
+                'success': True,
+                'data': {
+                    'symbol': symbol,
+                    'timeframe': timeframe,
+                    'timestamp': session_analysis.current_session.timestamp.isoformat(),
+                    'current_session': {
+                        'name': session_analysis.current_session.session_name,
+                        'start_time': session_analysis.current_session.start_time,
+                        'end_time': session_analysis.current_session.end_time,
+                        'current_volume': session_analysis.current_session.current_volume,
+                        'session_progress': session_analysis.current_session.session_progress,
+                        'current_hour': session_analysis.current_session.current_hour,
+                        'total_hours': session_analysis.current_session.total_hours
+                    },
+                    'session_metrics': {
+                        'session_rel_volume': session_analysis.session_rel_volume,
+                        'session_hourly_rate': session_analysis.session_hourly_rate,
+                        'session_hourly_rel': session_analysis.session_hourly_rel,
+                        'session_share_current': session_analysis.session_share_current,
+                        'session_share_typical': session_analysis.session_share_typical
+                    },
+                    'daily_context': {
+                        'current_daily_volume': session_analysis.daily_context.current_daily_volume,
+                        'daily_avg_7day': session_analysis.daily_context.daily_avg_7day,
+                        'daily_progress_pct': session_analysis.daily_context.daily_progress_pct,
+                        'sessions_completed': session_analysis.daily_context.sessions_completed,
+                        'estimated_daily_total': session_analysis.daily_context.estimated_daily_total
+                    },
+                    'dst_info': {
+                        'is_dst_active': session_analysis.is_dst_active,
+                        'dst_adjustment': session_analysis.dst_adjustment
+                    }
+                }
+            }
+        except Exception as e:
             return {
                 'success': False,
                 'error': str(e)
@@ -1222,6 +1303,14 @@ async def create_app():
         result = await market_service.handle_comprehensive_analysis_request(symbol, timeframe, exchange)
         return web.json_response(result)
     
+    async def session_volume_handler(request):
+        data = await request.json()
+        symbol = data.get('symbol')
+        timeframe = data.get('timeframe', '15m')
+        exchange = data.get('exchange')
+        result = await market_service.handle_session_volume_request(symbol, timeframe, exchange)
+        return web.json_response(result)
+    
     app.router.add_get('/health', health_handler)
     app.router.add_post('/price', price_handler)
     app.router.add_post('/combined_price', combined_price_handler)
@@ -1231,6 +1320,7 @@ async def create_app():
     app.router.add_post('/cvd', cvd_handler)
     app.router.add_post('/volume_scan', volume_scan_handler)
     app.router.add_post('/comprehensive_analysis', comprehensive_analysis_handler)
+    app.router.add_post('/session_volume', session_volume_handler)
     app.router.add_post('/balance', balance_handler)
     app.router.add_post('/positions', positions_handler)
     app.router.add_post('/pnl', pnl_handler)
