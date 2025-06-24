@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from volume_analysis import VolumeAnalysisEngine, VolumeSpike, CVDData
 from technical_indicators import TechnicalAnalysisService, TechnicalIndicators
 from session_volume import SessionVolumeEngine, SessionAnalysis
+from oi_analysis import OIAnalysisEngine, OIAnalysisResult
 
 load_dotenv()
 
@@ -542,6 +543,7 @@ class MarketDataService:
         self.exchange_manager = ExchangeManager()
         self.volume_engine = None  # Will be initialized after exchange_manager
         self.technical_service = None  # Will be initialized after exchange_manager
+        self.oi_engine = None  # Will be initialized after exchange_manager
         self._initialized = False
         logger.info("Market Data Service created")
     
@@ -552,6 +554,7 @@ class MarketDataService:
             self.volume_engine = VolumeAnalysisEngine(self.exchange_manager)
             self.technical_service = TechnicalAnalysisService(self.exchange_manager)
             self.session_volume_engine = SessionVolumeEngine(self.exchange_manager)
+            self.oi_engine = OIAnalysisEngine(self.exchange_manager)
             self._initialized = True
             logger.info("Market Data Service initialized")
     
