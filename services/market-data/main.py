@@ -7,9 +7,15 @@ from datetime import datetime
 import json
 from loguru import logger
 from dotenv import load_dotenv
-from .volume_analysis import VolumeAnalysisEngine, VolumeSpike, CVDData
-from .technical_indicators import TechnicalAnalysisService, TechnicalIndicators
-from .oi_analysis import OIAnalysisService
+try:
+    from .volume_analysis import VolumeAnalysisEngine, VolumeSpike, CVDData
+    from .technical_indicators import TechnicalAnalysisService, TechnicalIndicators
+    from .oi_analysis import OIAnalysisService
+except ImportError:
+    # For direct execution
+    from volume_analysis import VolumeAnalysisEngine, VolumeSpike, CVDData
+    from technical_indicators import TechnicalAnalysisService, TechnicalIndicators
+    from oi_analysis import OIAnalysisService
 
 load_dotenv()
 
@@ -880,7 +886,10 @@ class MarketDataService:
         """Handle unified 13-market OI analysis request"""
         try:
             # Import the unified aggregator
-            from .unified_oi_aggregator import UnifiedOIAggregator
+            try:
+                from .unified_oi_aggregator import UnifiedOIAggregator
+            except ImportError:
+                from unified_oi_aggregator import UnifiedOIAggregator
             
             # Extract base symbol (remove suffixes)
             clean_symbol = base_symbol.upper()

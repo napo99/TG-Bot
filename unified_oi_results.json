@@ -1,0 +1,231 @@
+{
+  "base_symbol": "BTC",
+  "timestamp": "2025-06-25T23:27:03.075380",
+  "total_markets": 13,
+  "aggregated_oi": {
+    "total_tokens": 278379.28315740474,
+    "total_usd": 29806916333.582638,
+    "total_volume_24h": 15240256.863809519,
+    "total_volume_24h_usd": 1632082739433.7742,
+    "exchanges_count": 5
+  },
+  "exchange_breakdown": [
+    {
+      "exchange": "binance",
+      "oi_tokens": 106068.4502063351,
+      "oi_usd": 11357539902.548698,
+      "oi_percentage": 38.10370645336589,
+      "funding_rate": 2.7674720492048818e-05,
+      "volume_24h": 199080.16339570953,
+      "volume_24h_usd": 21315813303.4065,
+      "markets": 3,
+      "market_breakdown": [
+        {
+          "type": "USDT",
+          "symbol": "BTCUSDT",
+          "oi_tokens": 77377.036,
+          "oi_usd": 8283853933.198799,
+          "price": 107058.3,
+          "funding_rate": 9.89e-06,
+          "volume_24h": 161226.643,
+          "volume_24h_usd": 17260650314.286903
+        },
+        {
+          "type": "USDC",
+          "symbol": "BTCUSDC",
+          "oi_tokens": 6691.361,
+          "oi_usd": 716818069.3499,
+          "price": 107125.9,
+          "funding_rate": -4.6e-06,
+          "volume_24h": 21056.244,
+          "volume_24h_usd": 2255669089.1196
+        },
+        {
+          "type": "USD",
+          "symbol": "BTCUSD_PERP",
+          "oi_tokens": 22000.0532063351,
+          "oi_usd": 2356867900.0,
+          "price": 107130.1,
+          "funding_rate": 0.0001,
+          "volume_24h": 16797.276395709516,
+          "volume_24h_usd": 1799493900.0
+        }
+      ]
+    },
+    {
+      "exchange": "bybit",
+      "oi_tokens": 69738.70516669701,
+      "oi_usd": 7466066819.7058,
+      "oi_percentage": 25.048102045007543,
+      "funding_rate": -4.170618892525587e-05,
+      "volume_24h": 89853.08721925193,
+      "volume_24h_usd": 9618509017.011799,
+      "markets": 3,
+      "market_breakdown": [
+        {
+          "type": "USDT",
+          "symbol": "BTCUSDT",
+          "oi_tokens": 54880.515,
+          "oi_usd": 5874520086.63,
+          "price": 107042.0,
+          "funding_rate": -2.641e-05,
+          "volume_24h": 83705.94,
+          "volume_24h_usd": 8960051229.48
+        },
+        {
+          "type": "USDC",
+          "symbol": "BTCPERP",
+          "oi_tokens": 1203.854,
+          "oi_usd": 128942033.0758,
+          "price": 107107.7,
+          "funding_rate": -5.694e-05,
+          "volume_24h": 353.134,
+          "volume_24h_usd": 37823370.5318
+        },
+        {
+          "type": "USD",
+          "symbol": "BTCUSD",
+          "oi_tokens": 13654.336166697007,
+          "oi_usd": 1462604700.0,
+          "price": 107116.5,
+          "funding_rate": -0.0001018,
+          "volume_24h": 5794.013219251936,
+          "volume_24h_usd": 620634417.0
+        }
+      ]
+    },
+    {
+      "exchange": "okx",
+      "oi_tokens": 33044.26554635094,
+      "oi_usd": 3538181803.2127714,
+      "oi_percentage": 11.87033829201043,
+      "funding_rate": -2.1813284530779233e-05,
+      "volume_24h": 14945735.903222,
+      "volume_24h_usd": 1600550282023.356,
+      "markets": 3,
+      "market_breakdown": [
+        {
+          "type": "USDT",
+          "symbol": "BTC-USDT-SWAP",
+          "oi_tokens": 26106.22200000007,
+          "oi_usd": 2794934737.942208,
+          "price": 107060.1,
+          "funding_rate": -1.95915060155e-05,
+          "volume_24h": 8561970.56,
+          "volume_24h_usd": 916645424350.6561
+        },
+        {
+          "type": "USDC",
+          "symbol": "BTC-USDC-SWAP",
+          "oi_tokens": 374.9702,
+          "oi_usd": 40171269.96938,
+          "price": 107131.9,
+          "funding_rate": 2.20060260639e-05,
+          "volume_24h": 6374833.0,
+          "volume_24h_usd": 682947971472.7
+        },
+        {
+          "type": "USD",
+          "symbol": "BTC-USD-SWAP",
+          "oi_tokens": 6563.073346350875,
+          "oi_usd": 703075795.3011838,
+          "price": 107126.0,
+          "funding_rate": -3.31491936339e-05,
+          "volume_24h": 8932.343222000261,
+          "volume_24h_usd": 956886200.0
+        }
+      ]
+    },
+    {
+      "exchange": "gateio",
+      "oi_tokens": 7081.649538021701,
+      "oi_usd": 758060926.0,
+      "oi_percentage": 2.543238346148251,
+      "funding_rate": -0.00014679400280815953,
+      "volume_24h": 5587.709972557728,
+      "volume_24h_usd": 598135090.0,
+      "markets": 2,
+      "market_breakdown": [
+        {
+          "type": "USDT",
+          "symbol": "BTC_USDT",
+          "oi_tokens": 6871.274914988229,
+          "oi_usd": 735528752.0,
+          "price": 107044.0,
+          "funding_rate": -0.000144,
+          "volume_24h": 5517.813291730503,
+          "volume_24h_usd": 590648806.0
+        },
+        {
+          "type": "USD",
+          "symbol": "BTC_USD",
+          "oi_tokens": 210.37462303347183,
+          "oi_usd": 22532174.0,
+          "price": 107105.0,
+          "funding_rate": -0.000238,
+          "volume_24h": 69.89668082722562,
+          "volume_24h_usd": 7486284.0
+        }
+      ]
+    },
+    {
+      "exchange": "bitget",
+      "oi_tokens": 62446.2127,
+      "oi_usd": 6687066882.115369,
+      "oi_percentage": 22.434614863467893,
+      "funding_rate": 1.8643786892490347e-05,
+      "volume_24h": 0.0,
+      "volume_24h_usd": 0.0,
+      "markets": 2,
+      "market_breakdown": [
+        {
+          "type": "USDT",
+          "symbol": "BTCUSDT_UMCBL",
+          "oi_tokens": 46339.5318,
+          "oi_usd": 4961559767.966459,
+          "price": 107069.7,
+          "funding_rate": 6e-06,
+          "volume_24h": 0.0,
+          "volume_24h_usd": 0.0
+        },
+        {
+          "type": "USD",
+          "symbol": "BTCUSD_DMCBL",
+          "oi_tokens": 16106.6809,
+          "oi_usd": 1725507114.1489098,
+          "price": 107129.9,
+          "funding_rate": 5.5e-05,
+          "volume_24h": 0.0,
+          "volume_24h_usd": 0.0
+        }
+      ]
+    }
+  ],
+  "market_categories": {
+    "usdt_stable": {
+      "total_tokens": 211574.57971498827,
+      "total_usd": 22650397277.737465,
+      "percentage": 75.99040781088074,
+      "exchanges": 5
+    },
+    "usdc_stable": {
+      "total_tokens": 8270.1852,
+      "total_usd": 885931372.39508,
+      "percentage": 2.9722342374508743,
+      "exchanges": 3
+    },
+    "usd_inverse": {
+      "total_tokens": 58534.51824241645,
+      "total_usd": 6270587683.450093,
+      "percentage": 21.037357951668398,
+      "exchanges": 5
+    }
+  },
+  "validation_summary": {
+    "successful_exchanges": 5,
+    "failed_exchanges": 0,
+    "total_markets": 13,
+    "validation_passed": true,
+    "failed_details": {}
+  }
+}
