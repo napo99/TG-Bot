@@ -989,6 +989,45 @@ class MarketDataService:
                 'error': str(e)
             }
     
+    async def handle_oi_analysis_request(self, symbol: str = "BTC") -> Dict[str, Any]:
+        """Handle OI analysis request"""
+        try:
+            await self.initialize()
+            analysis_result = await self.oi_engine.analyze_oi(symbol)
+            formatted_output = self.oi_engine.format_oi_analysis(analysis_result)
+            
+            return {
+                'success': True,
+                'data': {
+                    'symbol': analysis_result.base_token,
+                    'total_oi_tokens': analysis_result.total_oi_tokens,
+                    'total_oi_usd': analysis_result.total_oi_usd,
+                    'stablecoin_margined_usd': analysis_result.stablecoin_margined_usd,
+                    'coin_margined_usd': analysis_result.coin_margined_usd,
+                    'stablecoin_percentage': analysis_result.stablecoin_percentage,
+                    'coin_margined_percentage': analysis_result.coin_margined_percentage,
+                    'top_markets': [
+                        {
+                            'exchange': market.exchange,
+                            'symbol': market.symbol,
+                            'oi_tokens': market.oi_tokens,
+                            'oi_usd': market.oi_usd,
+                            'market_type': market.market_type,
+                            'rank': market.rank
+                        } for market in analysis_result.top_markets
+                    ],
+                    'formatted_output': formatted_output,
+                    'timestamp': analysis_result.timestamp.isoformat(),
+                    'utc_time': analysis_result.utc_time,
+                    'sgt_time': analysis_result.sgt_time
+                }
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
     def _format_price_data(self, combined_price: CombinedPriceData) -> Dict[str, Any]:
         """Format price data for analysis response"""
         if not combined_price:
@@ -1314,6 +1353,12 @@ async def create_app():
         result = await market_service.handle_session_volume_request(symbol, timeframe, exchange)
         return web.json_response(result)
     
+    async def oi_analysis_handler(request):
+        data = await request.json()
+        symbol = data.get('symbol', 'BTC')
+        result = await market_service.handle_oi_analysis_request(symbol)
+        return web.json_response(result)
+    
     app.router.add_get('/health', health_handler)
     app.router.add_post('/price', price_handler)
     app.router.add_post('/combined_price', combined_price_handler)
@@ -1324,6 +1369,7 @@ async def create_app():
     app.router.add_post('/volume_scan', volume_scan_handler)
     app.router.add_post('/comprehensive_analysis', comprehensive_analysis_handler)
     app.router.add_post('/session_volume', session_volume_handler)
+    app.router.add_post('/oi_analysis', oi_analysis_handler)
     app.router.add_post('/balance', balance_handler)
     app.router.add_post('/positions', positions_handler)
     app.router.add_post('/pnl', pnl_handler)

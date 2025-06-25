@@ -6,6 +6,7 @@ from datetime import datetime
 import aiohttp
 from loguru import logger
 import pytz
+from binance_bybit_oi_service import BinanceBybitOIService
 
 @dataclass
 class OIMarketData:
@@ -42,10 +43,11 @@ class OIAnalysisEngine:
     
     def __init__(self, exchange_manager):
         self.exchange_manager = exchange_manager
+        self.binance_bybit_service = BinanceBybitOIService()
         self.supported_exchanges = {
             'binance': {
                 'stablecoin_margined': True,
-                'coin_margined': False,  # Binance USD-M futures only
+                'coin_margined': True,  # Now includes USD inverse via our service
                 'oi_endpoint': 'fetch_open_interest'
             },
             'bybit': {
@@ -118,19 +120,41 @@ class OIAnalysisEngine:
         """Gather OI data from all supported exchanges"""
         all_markets = []
         
-        # Define the markets to fetch
-        markets_to_fetch = [
-            # Binance USD-M Futures (Stablecoin-margined)
-            {'exchange': 'binance', 'symbol': f'{base_token}/USDT:USDT', 'market_type': 'stablecoin-margined'},
+        # First, get comprehensive Binance + Bybit data using our specialized service
+        try:
+            logger.info(f"Fetching Binance + Bybit OI data for {base_token} using specialized service")
+            binance_bybit_data = await self.binance_bybit_service.get_combined_oi_analysis(base_token)
             
-            # Bybit USDT Perpetual (Stablecoin-margined)  
-            {'exchange': 'bybit', 'symbol': f'{base_token}USDT', 'market_type': 'stablecoin-margined'},
-            
-            # Bybit Coin-margined (Inverse)
-            {'exchange': 'bybit', 'symbol': f'{base_token}USD', 'market_type': 'coin-margined'},
-        ]
+            if binance_bybit_data['success']:
+                # Convert our service data to OIMarketData format
+                for market in binance_bybit_data['data']['individual_markets']:
+                    # Determine market type
+                    market_type = 'coin-margined' if market['category'] == 'INVERSE' else 'stablecoin-margined'
+                    
+                    # Format exchange name
+                    exchange_name = f"{market['exchange'].title()} {market['market_type']}"
+                    
+                    oi_market = OIMarketData(
+                        exchange=exchange_name,
+                        symbol=market['symbol_exchange'],
+                        base_token=base_token,
+                        market_type=market_type,
+                        oi_tokens=market['oi_tokens'],
+                        oi_usd=market['oi_usd'],
+                        price=market['oi_usd'] / market['oi_tokens'] if market['oi_tokens'] > 0 else 0,
+                        funding_rate=market['funding_rate'],
+                        volume_24h=market['volume_tokens'],
+                        volume_24h_usd=market['volume_tokens'] * (market['oi_usd'] / market['oi_tokens']) if market['oi_tokens'] > 0 else 0
+                    )
+                    all_markets.append(oi_market)
+                    logger.info(f"Added {exchange_name}: {oi_market.oi_tokens:,.0f} {base_token}")
+        except Exception as e:
+            logger.warning(f"Failed to fetch Binance+Bybit data via specialized service: {e}")
+        finally:
+            # Ensure the specialized service session is closed
+            await self.binance_bybit_service.close()
         
-        # Add more major exchanges and their symbols
+        # Define additional markets to fetch from other exchanges
         additional_markets = [
             # OKX
             {'exchange': 'okx', 'symbol': f'{base_token}-USDT-SWAP', 'market_type': 'stablecoin-margined'},
@@ -150,29 +174,32 @@ class OIAnalysisEngine:
         ]
         
         # Only add additional markets if they make sense for the token
+        additional_markets_to_fetch = []
         if base_token in ['BTC', 'ETH']:
-            markets_to_fetch.extend(additional_markets)
+            additional_markets_to_fetch = additional_markets
         
-        # Fetch data concurrently
-        tasks = []
-        for market_info in markets_to_fetch:
-            task = self._fetch_market_oi(
-                market_info['exchange'],
-                market_info['symbol'],
-                base_token,
-                market_info['market_type']
-            )
-            tasks.append(task)
-        
-        # Wait for all tasks to complete
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        # Filter successful results
-        for result in results:
-            if isinstance(result, OIMarketData):
-                all_markets.append(result)
-            elif isinstance(result, Exception):
-                logger.warning(f"Failed to fetch OI data: {result}")
+        # Fetch additional data concurrently
+        if additional_markets_to_fetch:
+            tasks = []
+            for market_info in additional_markets_to_fetch:
+                task = self._fetch_market_oi(
+                    market_info['exchange'],
+                    market_info['symbol'],
+                    base_token,
+                    market_info['market_type']
+                )
+                tasks.append(task)
+            
+            # Wait for all tasks to complete
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Filter successful results
+            for result in results:
+                if isinstance(result, OIMarketData):
+                    all_markets.append(result)
+                    logger.info(f"Added {result.exchange}: {result.oi_tokens:,.0f} {base_token}")
+                elif isinstance(result, Exception):
+                    logger.warning(f"Failed to fetch additional OI data: {result}")
         
         return all_markets
     
