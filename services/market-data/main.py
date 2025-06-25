@@ -7,12 +7,120 @@ from datetime import datetime
 import json
 from loguru import logger
 from dotenv import load_dotenv
-from volume_analysis import VolumeAnalysisEngine, VolumeSpike, CVDData
-from technical_indicators import TechnicalAnalysisService, TechnicalIndicators
-from session_volume import SessionVolumeEngine, SessionAnalysis
-from oi_analysis import OIAnalysisEngine, OIAnalysisResult
+from .volume_analysis import VolumeAnalysisEngine, VolumeSpike, CVDData
+from .technical_indicators import TechnicalAnalysisService, TechnicalIndicators
+from .oi_analysis import OIAnalysisService
 
 load_dotenv()
+
+# Symbol Harmonization System for 5 Exchanges
+EXCHANGE_SYMBOL_MAPPING = {
+    'binance': {
+        'linear_usdt': lambda base: f"{base}USDT",
+        'linear_usdc': lambda base: f"{base}USDC", 
+        'inverse': lambda base: f"{base}USD_PERP"
+    },
+    'bybit': {
+        'linear_usdt': lambda base: f"{base}USDT",
+        'linear_usdc': lambda base: f"{base}USDC",
+        'inverse': lambda base: f"{base}USD"
+    },
+    'okx': {
+        'linear_usdt': lambda base: f"{base}-USDT-SWAP",
+        'linear_usdc': lambda base: f"{base}-USDC-SWAP",
+        'inverse': lambda base: f"{base}-USD-SWAP"
+    },
+    'gateio': {
+        'linear_usdt': lambda base: f"{base}_USDT",
+        'linear_usdc': lambda base: f"{base}_USDC",
+        'inverse': lambda base: f"{base}_USD"
+    },
+    'bitget': {
+        'linear_usdt': lambda base: f"{base}USDT_UMCBL",
+        'linear_usdc': lambda base: f"{base}USDC_UMCBL",
+        'inverse': lambda base: f"{base}USD_DMCBL"
+    }
+}
+
+class SymbolHarmonizer:
+    """Unified symbol mapping across all 5 exchanges"""
+    
+    @staticmethod
+    def get_exchange_symbol(base_symbol: str, exchange: str, market_type: str) -> str:
+        """Convert base symbol to exchange-specific format"""
+        # Extract just the base token (e.g., BTC from BTC/USDT)
+        if '/' in base_symbol:
+            base_token = base_symbol.split('/')[0].upper()
+        else:
+            # Remove common suffixes if present
+            base_token = base_symbol.upper()
+            for suffix in ['USDT', 'USDC', 'USD']:
+                if base_token.endswith(suffix):
+                    base_token = base_token[:-len(suffix)]
+                    break
+        
+        if exchange not in EXCHANGE_SYMBOL_MAPPING:
+            raise ValueError(f"Unsupported exchange: {exchange}")
+        
+        if market_type not in EXCHANGE_SYMBOL_MAPPING[exchange]:
+            raise ValueError(f"Unsupported market type '{market_type}' for {exchange}")
+        
+        return EXCHANGE_SYMBOL_MAPPING[exchange][market_type](base_token)
+    
+    @staticmethod
+    def normalize_symbol(symbol: str) -> str:
+        """Normalize symbol to standard format (BTC/USDT)"""
+        # Remove exchange-specific suffixes and convert to standard format
+        symbol = symbol.upper()
+        
+        # Handle different formats
+        if '_UMCBL' in symbol or '_DMCBL' in symbol:
+            # Bitget format
+            symbol = symbol.replace('_UMCBL', '').replace('_DMCBL', '')
+        elif '-SWAP' in symbol:
+            # OKX format
+            symbol = symbol.replace('-SWAP', '')
+        elif '_' in symbol:
+            # Gate.io format
+            symbol = symbol.replace('_', '/')
+        elif 'USD_PERP' in symbol:
+            # Binance inverse format
+            symbol = symbol.replace('USD_PERP', 'USD')
+        
+        # Convert to standard format
+        if '/' not in symbol and '-' not in symbol:
+            # Handle formats like BTCUSDT -> BTC/USDT
+            for quote in ['USDT', 'USDC', 'USD']:
+                if symbol.endswith(quote):
+                    base = symbol[:-len(quote)]
+                    return f"{base}/{quote}"
+        elif '-' in symbol:
+            # Handle formats like BTC-USDT -> BTC/USDT
+            symbol = symbol.replace('-', '/')
+        
+        return symbol
+    
+    @staticmethod
+    def get_all_exchange_symbols(base_symbol: str) -> Dict[str, Dict[str, str]]:
+        """Get all exchange symbols for a base symbol"""
+        # Extract just the base token (e.g., BTC from BTC/USDT)
+        if '/' in base_symbol:
+            base_token = base_symbol.split('/')[0].upper()
+        else:
+            # Remove common suffixes if present
+            base_token = base_symbol.upper()
+            for suffix in ['USDT', 'USDC', 'USD']:
+                if base_token.endswith(suffix):
+                    base_token = base_token[:-len(suffix)]
+                    break
+        
+        result = {}
+        for exchange, mappings in EXCHANGE_SYMBOL_MAPPING.items():
+            result[exchange] = {}
+            for market_type, mapper in mappings.items():
+                result[exchange][market_type] = mapper(base_token)
+        
+        return result
 
 class MarketCapRanking:
     """Smart ranking system using known market cap order and trading data"""
@@ -86,31 +194,6 @@ class PositionData:
     mark_price: float
     unrealized_pnl: float
     percentage: float
-
-@dataclass
-class LongShortData:
-    symbol: str
-    timestamp: int
-    # Institutional (Top Traders)
-    institutional_long_pct: float
-    institutional_short_pct: float
-    institutional_long_ratio: float
-    # Retail (All Users)
-    retail_long_pct: float
-    retail_short_pct: float
-    retail_long_ratio: float
-    # Net positions in tokens
-    total_oi_tokens: float
-    net_longs_institutional: float
-    net_shorts_institutional: float
-    net_longs_retail: float
-    net_shorts_retail: float
-    # USD values
-    token_price: float
-    net_longs_institutional_usd: float
-    net_shorts_institutional_usd: float
-    net_longs_retail_usd: float
-    net_shorts_retail_usd: float
 
 class ExchangeManager:
     def __init__(self):
@@ -443,107 +526,13 @@ class ExchangeManager:
         except Exception as e:
             logger.error(f"Error fetching top {market_type} symbols: {e}")
             raise
-    
-    async def get_long_short_data(self, symbol: str) -> Optional[LongShortData]:
-        """Get long/short position data for a symbol"""
-        try:
-            # Convert symbol format for Binance API (e.g., SOL/USDT -> SOLUSDT)
-            binance_symbol = symbol.replace('/', '')
-            
-            # Get current price and OI
-            combined_price = await self.get_combined_price(symbol)
-            if not combined_price or not combined_price.perp:
-                logger.warning(f"No perpetual data available for {symbol}")
-                return None
-            
-            current_price = combined_price.perp.price
-            total_oi = combined_price.perp.open_interest
-            
-            if not total_oi:
-                logger.warning(f"No open interest data for {symbol}")
-                return None
-            
-            # Fetch long/short ratios using direct HTTP requests (more reliable than ccxt)
-            import aiohttp
-            
-            async with aiohttp.ClientSession() as session:
-                # Get top trader position ratio (institutional)
-                institutional_url = f"https://fapi.binance.com/futures/data/topLongShortPositionRatio?symbol={binance_symbol}&period=15m&limit=1"
-                async with session.get(institutional_url) as resp:
-                    if resp.status != 200:
-                        raise Exception(f"Failed to fetch institutional data: {resp.status}")
-                    institutional_data = await resp.json()
-                
-                # Get global account ratio (retail)
-                retail_url = f"https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol={binance_symbol}&period=15m&limit=1"
-                async with session.get(retail_url) as resp:
-                    if resp.status != 200:
-                        raise Exception(f"Failed to fetch retail data: {resp.status}")
-                    retail_data = await resp.json()
-            
-            if not institutional_data or not retail_data:
-                logger.warning(f"No long/short ratio data for {symbol}")
-                return None
-            
-            # Parse institutional data (top traders)
-            inst_data = institutional_data[0]
-            inst_long_pct = float(inst_data['longAccount']) * 100
-            inst_short_pct = float(inst_data['shortAccount']) * 100
-            inst_long_ratio = float(inst_data['longShortRatio'])
-            
-            # Parse retail data (all users)
-            ret_data = retail_data[0]
-            ret_long_pct = float(ret_data['longAccount']) * 100
-            ret_short_pct = float(ret_data['shortAccount']) * 100
-            ret_long_ratio = float(ret_data['longShortRatio'])
-            
-            # Calculate net positions in tokens
-            net_longs_inst = total_oi * (inst_long_pct / 100)
-            net_shorts_inst = total_oi * (inst_short_pct / 100)
-            net_longs_ret = total_oi * (ret_long_pct / 100)
-            net_shorts_ret = total_oi * (ret_short_pct / 100)
-            
-            # Calculate USD values
-            net_longs_inst_usd = net_longs_inst * current_price
-            net_shorts_inst_usd = net_shorts_inst * current_price
-            net_longs_ret_usd = net_longs_ret * current_price
-            net_shorts_ret_usd = net_shorts_ret * current_price
-            
-            return LongShortData(
-                symbol=symbol,
-                timestamp=inst_data['timestamp'],
-                # Institutional data
-                institutional_long_pct=inst_long_pct,
-                institutional_short_pct=inst_short_pct,
-                institutional_long_ratio=inst_long_ratio,
-                # Retail data
-                retail_long_pct=ret_long_pct,
-                retail_short_pct=ret_short_pct,
-                retail_long_ratio=ret_long_ratio,
-                # Net positions
-                total_oi_tokens=total_oi,
-                net_longs_institutional=net_longs_inst,
-                net_shorts_institutional=net_shorts_inst,
-                net_longs_retail=net_longs_ret,
-                net_shorts_retail=net_shorts_ret,
-                # USD values
-                token_price=current_price,
-                net_longs_institutional_usd=net_longs_inst_usd,
-                net_shorts_institutional_usd=net_shorts_inst_usd,
-                net_longs_retail_usd=net_longs_ret_usd,
-                net_shorts_retail_usd=net_shorts_ret_usd
-            )
-            
-        except Exception as e:
-            logger.error(f"Error fetching long/short data for {symbol}: {e}")
-            return None
 
 class MarketDataService:
     def __init__(self):
         self.exchange_manager = ExchangeManager()
         self.volume_engine = None  # Will be initialized after exchange_manager
         self.technical_service = None  # Will be initialized after exchange_manager
-        self.oi_engine = None  # Will be initialized after exchange_manager
+        self.oi_service = None  # Will be initialized after exchange_manager
         self._initialized = False
         logger.info("Market Data Service created")
     
@@ -553,8 +542,7 @@ class MarketDataService:
             await self.exchange_manager._init_exchanges()
             self.volume_engine = VolumeAnalysisEngine(self.exchange_manager)
             self.technical_service = TechnicalAnalysisService(self.exchange_manager)
-            self.session_volume_engine = SessionVolumeEngine(self.exchange_manager)
-            self.oi_engine = OIAnalysisEngine(self.exchange_manager)
+            self.oi_service = OIAnalysisService(self.exchange_manager)
             self._initialized = True
             logger.info("Market Data Service initialized")
     
@@ -809,39 +797,23 @@ class MarketDataService:
             # Gather all data concurrently for better performance
             import asyncio
             
-            # First get combined price to determine which market is available
-            combined_price = await self.exchange_manager.get_combined_price(symbol, exchange)
-            
-            # Determine the primary market type and exchange to use for technical analysis
-            # This ensures VWAP comes from the same market as the displayed price
-            if combined_price.perp:
-                # If perp data is available, use futures exchange for all technical analysis
-                primary_exchange = 'binance_futures'
-                primary_symbol = combined_price.perp.symbol
-                primary_price_data = combined_price.perp
-            elif combined_price.spot:
-                # If only spot data is available, use spot exchange for technical analysis
-                primary_exchange = 'binance'
-                primary_symbol = combined_price.spot.symbol
-                primary_price_data = combined_price.spot
-            else:
-                raise ValueError(f"No price data available for {symbol}")
-            
-            # Run remaining analysis with consistent exchange/market (including session volume)
+            # Run all analysis in parallel
             tasks = [
-                self.volume_engine.detect_volume_spike(primary_symbol, timeframe, exchange=primary_exchange),
-                self.volume_engine.calculate_cvd(primary_symbol, timeframe, exchange=primary_exchange),
-                self.technical_service.get_technical_indicators(primary_symbol, timeframe, primary_exchange),
-                self.session_volume_engine.analyze_session_volume(primary_symbol, timeframe, primary_exchange),
-                self.exchange_manager.get_long_short_data(symbol) if combined_price.perp else None
+                self.exchange_manager.get_combined_price(symbol, exchange),
+                self.volume_engine.detect_volume_spike(symbol, timeframe, exchange=exchange),
+                self.volume_engine.calculate_cvd(symbol, timeframe, exchange=exchange),
+                self.technical_service.get_technical_indicators(symbol, timeframe, exchange)
             ]
             
-            volume_spike, cvd_data, tech_indicators, session_analysis, long_short_data = await asyncio.gather(*tasks)
+            combined_price, volume_spike, cvd_data, tech_indicators = await asyncio.gather(*tasks)
             
             # Analyze market sentiment and control
             sentiment_analysis = self._analyze_market_sentiment(
                 combined_price, volume_spike, cvd_data, tech_indicators
             )
+            
+            # Format the response exactly as the Telegram bot expects
+            price_data = self._format_price_data(combined_price)
             
             return {
                 'success': True,
@@ -850,17 +822,17 @@ class MarketDataService:
                     'timeframe': timeframe,
                     'timestamp': datetime.now().isoformat(),
                     
-                    # Price data (using the same market as technical analysis)
+                    # Price data (formatted for Telegram bot compatibility)
                     'price_data': {
-                        'current_price': float(primary_price_data.price),
-                        'change_24h': float(primary_price_data.change_24h or 0),
-                        'volume_24h': float(primary_price_data.volume_24h or 0),
-                        'volume_24h_usd': float((primary_price_data.volume_24h or 0) * primary_price_data.price),
-                        'market_type': 'perp' if combined_price.perp else 'spot',
-                        'funding_rate': float(primary_price_data.funding_rate or 0) if hasattr(primary_price_data, 'funding_rate') else None
+                        'current_price': float(price_data.get('current_price', 0)),
+                        'change_24h': float(price_data.get('change_24h', 0)),
+                        'volume_24h': float(price_data.get('volume_24h', 0)),
+                        'volume_24h_usd': float(price_data.get('volume_24h_usd', 0)),
+                        'market_type': price_data.get('market_type', 'spot'),
+                        'funding_rate': price_data.get('funding_rate', 0)
                     },
                     
-                    # Volume analysis
+                    # Volume analysis (formatted for Telegram bot compatibility)
                     'volume_analysis': {
                         'current_volume': float(volume_spike.current_volume),
                         'volume_usd': float(volume_spike.volume_usd),
@@ -870,67 +842,29 @@ class MarketDataService:
                         'relative_volume': float(volume_spike.current_volume / volume_spike.average_volume) if volume_spike.average_volume > 0 else 1.0
                     },
                     
-                    # CVD analysis
+                    # CVD analysis (formatted for Telegram bot compatibility)
                     'cvd_analysis': {
                         'current_cvd': float(cvd_data.current_cvd),
                         'cvd_trend': cvd_data.cvd_trend,
                         'divergence_detected': bool(cvd_data.divergence_detected),
-                        'cvd_change_24h': float(cvd_data.cvd_change_24h),
-                        'current_delta': float(cvd_data.current_delta),
-                        'current_delta_usd': float(cvd_data.current_delta_usd)
+                        'cvd_change_24h': float(cvd_data.cvd_change_24h)
                     },
                     
-                    # Technical indicators
+                    # Technical indicators (formatted for Telegram bot compatibility)
                     'technical_indicators': {
-                        'rsi_14': tech_indicators.rsi_14,
-                        'vwap': tech_indicators.vwap,
-                        'atr_14': tech_indicators.atr_14,
-                        'volatility_24h': tech_indicators.volatility_24h,
-                        'bb_upper': tech_indicators.bb_upper,
-                        'bb_middle': tech_indicators.bb_middle,
-                        'bb_lower': tech_indicators.bb_lower,
-                        'volatility_15m': tech_indicators.volatility_15m,
-                        'atr_usd': tech_indicators.atr_usd
+                        'rsi_14': float(tech_indicators.rsi_14) if tech_indicators.rsi_14 is not None else 50.0,
+                        'vwap': float(tech_indicators.vwap) if tech_indicators.vwap is not None else float(price_data.get('current_price', 0)),
+                        'atr_14': float(tech_indicators.atr_14) if tech_indicators.atr_14 is not None else 0.0,
+                        'volatility_24h': float(tech_indicators.volatility_24h) if tech_indicators.volatility_24h is not None else 0.0,
+                        'bb_upper': float(tech_indicators.bb_upper) if tech_indicators.bb_upper is not None else 0.0,
+                        'bb_middle': float(tech_indicators.bb_middle) if tech_indicators.bb_middle is not None else 0.0,
+                        'bb_lower': float(tech_indicators.bb_lower) if tech_indicators.bb_lower is not None else 0.0
                     },
                     
-                    # Market sentiment analysis
+                    # Market sentiment analysis (formatted for Telegram bot compatibility)
                     'market_sentiment': sentiment_analysis,
                     
-                    # Session volume analysis
-                    'session_analysis': {
-                        'current_session': {
-                            'name': session_analysis.current_session.session_name,
-                            'start_time': session_analysis.current_session.start_time,
-                            'end_time': session_analysis.current_session.end_time,
-                            'current_volume': float(session_analysis.current_session.current_volume),
-                            'session_progress': float(session_analysis.session_rel_volume),
-                            'current_hour': session_analysis.current_session.current_hour,
-                            'total_hours': session_analysis.current_session.total_hours
-                        },
-                        'session_metrics': {
-                            'session_rel_volume': float(session_analysis.session_rel_volume),
-                            'session_hourly_rate': float(session_analysis.session_hourly_rate),
-                            'session_hourly_rel': float(session_analysis.session_hourly_rel),
-                            'session_share_current': float(session_analysis.session_share_current),
-                            'session_share_typical': float(session_analysis.session_share_typical)
-                        },
-                        'daily_context': {
-                            'current_daily_volume': float(session_analysis.daily_context.current_daily_volume),
-                            'daily_avg_7day': float(session_analysis.daily_context.daily_avg_7day),
-                            'daily_progress_pct': float(session_analysis.daily_context.daily_progress_pct),
-                            'sessions_completed': session_analysis.daily_context.sessions_completed,
-                            'estimated_daily_total': float(session_analysis.daily_context.estimated_daily_total)
-                        },
-                        'dst_info': {
-                            'is_dst_active': session_analysis.is_dst_active,
-                            'dst_adjustment': session_analysis.dst_adjustment
-                        }
-                    },
-                    
-                    # Long/Short position data (for perps)
-                    'long_short_data': self._format_long_short_data(long_short_data) if long_short_data else {},
-                    
-                    # OI data (for perps)
+                    # OI data (for perps) (formatted for Telegram bot compatibility)
                     'oi_data': self._extract_oi_data(combined_price)
                 }
             }
@@ -942,87 +876,81 @@ class MarketDataService:
                 'error': str(e)
             }
     
-    async def handle_session_volume_request(self, symbol: str, timeframe: str = '15m', exchange: str = None) -> Dict[str, Any]:
-        """Handle session volume analysis request"""
+    async def handle_multi_oi_request(self, base_symbol: str) -> Dict[str, Any]:
+        """Handle unified 13-market OI analysis request"""
         try:
-            await self.initialize()
-            session_analysis = await self.session_volume_engine.analyze_session_volume(symbol, timeframe, exchange)
+            # Import the unified aggregator
+            from .unified_oi_aggregator import UnifiedOIAggregator
             
-            return {
-                'success': True,
-                'data': {
-                    'symbol': symbol,
-                    'timeframe': timeframe,
-                    'timestamp': session_analysis.current_session.timestamp.isoformat(),
-                    'current_session': {
-                        'name': session_analysis.current_session.session_name,
-                        'start_time': session_analysis.current_session.start_time,
-                        'end_time': session_analysis.current_session.end_time,
-                        'current_volume': session_analysis.current_session.current_volume,
-                        'session_progress': session_analysis.current_session.session_progress,
-                        'current_hour': session_analysis.current_session.current_hour,
-                        'total_hours': session_analysis.current_session.total_hours
-                    },
-                    'session_metrics': {
-                        'session_rel_volume': session_analysis.session_rel_volume,
-                        'session_hourly_rate': session_analysis.session_hourly_rate,
-                        'session_hourly_rel': session_analysis.session_hourly_rel,
-                        'session_share_current': session_analysis.session_share_current,
-                        'session_share_typical': session_analysis.session_share_typical
-                    },
-                    'daily_context': {
-                        'current_daily_volume': session_analysis.daily_context.current_daily_volume,
-                        'daily_avg_7day': session_analysis.daily_context.daily_avg_7day,
-                        'daily_progress_pct': session_analysis.daily_context.daily_progress_pct,
-                        'sessions_completed': session_analysis.daily_context.sessions_completed,
-                        'estimated_daily_total': session_analysis.daily_context.estimated_daily_total
-                    },
-                    'dst_info': {
-                        'is_dst_active': session_analysis.is_dst_active,
-                        'dst_adjustment': session_analysis.dst_adjustment
-                    }
+            # Extract base symbol (remove suffixes)
+            clean_symbol = base_symbol.upper()
+            for suffix in ['USDT', 'USDC', 'USD', '/USDT', '/USDC', '/USD', '-USDT', '-USDC', '-USD']:
+                if clean_symbol.endswith(suffix):
+                    clean_symbol = clean_symbol.replace(suffix, '')
+                    break
+            
+            # Initialize unified aggregator
+            aggregator = UnifiedOIAggregator()
+            
+            try:
+                # Get unified data
+                unified_result = await aggregator.get_unified_oi_data(clean_symbol)
+                
+                # Convert to API response format
+                response = {
+                    'success': True,
+                    'base_symbol': unified_result.base_symbol,
+                    'timestamp': unified_result.timestamp.isoformat(),
+                    'total_markets': unified_result.total_markets,
+                    'aggregated_oi': unified_result.aggregated_oi,
+                    'exchange_breakdown': unified_result.exchange_breakdown,
+                    'market_categories': unified_result.market_categories,
+                    'validation_summary': unified_result.validation_summary
                 }
-            }
+                
+                logger.info(f"✅ Unified OI analysis completed for {clean_symbol}: {unified_result.total_markets} markets, {unified_result.aggregated_oi['total_tokens']:,.0f} {clean_symbol}")
+                
+                return response
+                
+            finally:
+                await aggregator.close()
+            
         except Exception as e:
+            logger.error(f"Error in unified OI analysis for {base_symbol}: {e}")
+            import traceback
+            traceback.print_exc()
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'base_symbol': base_symbol
             }
     
-    async def handle_oi_analysis_request(self, symbol: str = "BTC") -> Dict[str, Any]:
-        """Handle OI analysis request"""
+    async def handle_test_exchange_oi_request(self, exchange: str, symbol: str) -> Dict[str, Any]:
+        """Handle test exchange OI request for validation"""
         try:
             await self.initialize()
-            analysis_result = await self.oi_engine.analyze_oi(symbol)
-            formatted_output = self.oi_engine.format_oi_analysis(analysis_result)
+            
+            # Normalize symbol format
+            normalized_symbol = SymbolHarmonizer.normalize_symbol(symbol)
+            if '/' not in normalized_symbol:
+                normalized_symbol = f"{symbol}/USDT"  # Default to USDT pair
+            
+            # Get all exchange symbols for this base symbol
+            all_symbols = SymbolHarmonizer.get_all_exchange_symbols(normalized_symbol)
             
             return {
                 'success': True,
                 'data': {
-                    'symbol': analysis_result.base_token,
-                    'total_oi_tokens': analysis_result.total_oi_tokens,
-                    'total_oi_usd': analysis_result.total_oi_usd,
-                    'stablecoin_margined_usd': analysis_result.stablecoin_margined_usd,
-                    'coin_margined_usd': analysis_result.coin_margined_usd,
-                    'stablecoin_percentage': analysis_result.stablecoin_percentage,
-                    'coin_margined_percentage': analysis_result.coin_margined_percentage,
-                    'top_markets': [
-                        {
-                            'exchange': market.exchange,
-                            'symbol': market.symbol,
-                            'oi_tokens': market.oi_tokens,
-                            'oi_usd': market.oi_usd,
-                            'market_type': market.market_type,
-                            'rank': market.rank
-                        } for market in analysis_result.top_markets
-                    ],
-                    'formatted_output': formatted_output,
-                    'timestamp': analysis_result.timestamp.isoformat(),
-                    'utc_time': analysis_result.utc_time,
-                    'sgt_time': analysis_result.sgt_time
+                    'exchange': exchange,
+                    'base_symbol': symbol,
+                    'normalized_symbol': normalized_symbol,
+                    'exchange_symbols': all_symbols.get(exchange, {}),
+                    'all_exchange_symbols': all_symbols
                 }
             }
+            
         except Exception as e:
+            logger.error(f"Error in test exchange OI for {exchange}/{symbol}: {e}")
             return {
                 'success': False,
                 'error': str(e)
@@ -1069,51 +997,6 @@ class MarketDataService:
             'open_interest': float(oi),
             'open_interest_usd': float(oi_usd),
             'funding_rate': float(perp.funding_rate or 0)
-        }
-    
-    def _format_long_short_data(self, long_short_data: LongShortData) -> Dict[str, Any]:
-        """Format long/short position data for response"""
-        if not long_short_data:
-            return {}
-        
-        base_token = long_short_data.symbol.split('/')[0]
-        
-        # Calculate smart money edge
-        institutional_long_pct = long_short_data.institutional_long_pct
-        retail_long_pct = long_short_data.retail_long_pct
-        smart_money_edge = institutional_long_pct - retail_long_pct
-        
-        return {
-            'symbol': long_short_data.symbol,
-            'timestamp': long_short_data.timestamp,
-            'base_token': base_token,
-            
-            # Institutional (Top Traders)
-            'institutional': {
-                'long_pct': float(long_short_data.institutional_long_pct),
-                'short_pct': float(long_short_data.institutional_short_pct),
-                'long_ratio': float(long_short_data.institutional_long_ratio),
-                'net_longs_tokens': float(long_short_data.net_longs_institutional),
-                'net_shorts_tokens': float(long_short_data.net_shorts_institutional),
-                'net_longs_usd': float(long_short_data.net_longs_institutional_usd),
-                'net_shorts_usd': float(long_short_data.net_shorts_institutional_usd)
-            },
-            
-            # Retail (All Users)
-            'retail': {
-                'long_pct': float(long_short_data.retail_long_pct),
-                'short_pct': float(long_short_data.retail_short_pct),
-                'long_ratio': float(long_short_data.retail_long_ratio),
-                'net_longs_tokens': float(long_short_data.net_longs_retail),
-                'net_shorts_tokens': float(long_short_data.net_shorts_retail),
-                'net_longs_usd': float(long_short_data.net_longs_retail_usd),
-                'net_shorts_usd': float(long_short_data.net_shorts_retail_usd)
-            },
-            
-            # Summary with smart money edge
-            'total_oi_tokens': float(long_short_data.total_oi_tokens),
-            'token_price': float(long_short_data.token_price),
-            'smart_money_edge': float(round(smart_money_edge, 1))
         }
     
     def _analyze_market_sentiment(self, combined_price, volume_spike, cvd_data, tech_indicators) -> Dict[str, Any]:
@@ -1338,25 +1221,33 @@ async def create_app():
         return web.json_response(result)
     
     async def comprehensive_analysis_handler(request):
-        data = await request.json()
-        symbol = data.get('symbol')
-        timeframe = data.get('timeframe', '15m')
-        exchange = data.get('exchange')
+        # Support both GET and POST methods
+        if request.method == 'GET':
+            # GET method - parse query parameters
+            symbol = request.query.get('symbol')
+            timeframe = request.query.get('timeframe', '15m')
+            exchange = request.query.get('exchange')
+        else:
+            # POST method - parse JSON body
+            data = await request.json()
+            symbol = data.get('symbol')
+            timeframe = data.get('timeframe', '15m')
+            exchange = data.get('exchange')
+        
         result = await market_service.handle_comprehensive_analysis_request(symbol, timeframe, exchange)
         return web.json_response(result)
     
-    async def session_volume_handler(request):
+    async def multi_oi_handler(request):
         data = await request.json()
-        symbol = data.get('symbol')
-        timeframe = data.get('timeframe', '15m')
-        exchange = data.get('exchange')
-        result = await market_service.handle_session_volume_request(symbol, timeframe, exchange)
+        base_symbol = data.get('base_symbol')
+        result = await market_service.handle_multi_oi_request(base_symbol)
         return web.json_response(result)
     
-    async def oi_analysis_handler(request):
+    async def test_exchange_oi_handler(request):
         data = await request.json()
-        symbol = data.get('symbol', 'BTC')
-        result = await market_service.handle_oi_analysis_request(symbol)
+        exchange = data.get('exchange')
+        symbol = data.get('symbol')
+        result = await market_service.handle_test_exchange_oi_request(exchange, symbol)
         return web.json_response(result)
     
     app.router.add_get('/health', health_handler)
@@ -1367,12 +1258,13 @@ async def create_app():
     app.router.add_post('/volume_spike', volume_spike_handler)
     app.router.add_post('/cvd', cvd_handler)
     app.router.add_post('/volume_scan', volume_scan_handler)
+    app.router.add_get('/comprehensive_analysis', comprehensive_analysis_handler)
     app.router.add_post('/comprehensive_analysis', comprehensive_analysis_handler)
-    app.router.add_post('/session_volume', session_volume_handler)
-    app.router.add_post('/oi_analysis', oi_analysis_handler)
     app.router.add_post('/balance', balance_handler)
     app.router.add_post('/positions', positions_handler)
     app.router.add_post('/pnl', pnl_handler)
+    app.router.add_post('/multi_oi', multi_oi_handler)
+    app.router.add_post('/test_exchange_oi', test_exchange_oi_handler)
     
     return app
 
