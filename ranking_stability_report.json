@@ -1,0 +1,1341 @@
+{
+  "timestamp": "2025-06-26T14:42:41.952180",
+  "analysis": {
+    "total_samples": 10,
+    "sampling_duration": 42.445823192596436,
+    "ranking_consistency": {
+      "total_samples": 10,
+      "exchange_consistency": {
+        "binance": {
+          "most_common_position": 1,
+          "consistency_rate": 100.0,
+          "position_variance": 0,
+          "all_positions": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "bybit": {
+          "most_common_position": 2,
+          "consistency_rate": 100.0,
+          "position_variance": 0,
+          "all_positions": [
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2
+          ]
+        },
+        "gateio": {
+          "most_common_position": 3,
+          "consistency_rate": 100.0,
+          "position_variance": 0,
+          "all_positions": [
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3
+          ]
+        }
+      },
+      "bybit_gateio_flip_count": 0,
+      "bybit_gateio_flip_rate": 0.0,
+      "ranking_stable": true,
+      "all_rankings": [
+        {
+          "binance": 105232.50462166803,
+          "bybit": 69195.639117626,
+          "gateio": 68600.6544
+        },
+        {
+          "binance": 105232.76696687161,
+          "bybit": 69195.639117626,
+          "gateio": 68616.56480000001
+        },
+        {
+          "binance": 105233.0079668716,
+          "bybit": 69195.22878468632,
+          "gateio": 68616.56480000001
+        },
+        {
+          "binance": 105233.0079668716,
+          "bybit": 69195.24114220758,
+          "gateio": 68616.8768
+        },
+        {
+          "binance": 105233.05596687162,
+          "bybit": 69195.23858052243,
+          "gateio": 68617.064
+        },
+        {
+          "binance": 105233.61277542602,
+          "bybit": 69195.33744152883,
+          "gateio": 68617.064
+        },
+        {
+          "binance": 105233.61377542603,
+          "bybit": 69195.34164296306,
+          "gateio": 68678.6816
+        },
+        {
+          "binance": 105236.03679674154,
+          "bybit": 69195.34164296306,
+          "gateio": 68678.66560000001
+        },
+        {
+          "binance": 105235.99579674154,
+          "bybit": 69198.10735844994,
+          "gateio": 68678.66560000001
+        },
+        {
+          "binance": 105236.57979674154,
+          "bybit": 69198.10743268624,
+          "gateio": 68668.93280000001
+        }
+      ]
+    },
+    "exchange_stability": {
+      "binance": {
+        "mean_oi": 105234.0182430231,
+        "stdev_oi": 1.5527347235483662,
+        "min_oi": 105232.50462166803,
+        "max_oi": 105236.57979674154,
+        "range_oi": 4.0751750735071255,
+        "coefficient_of_variation": 0.0014755064469386169,
+        "stability_rating": "VERY_STABLE",
+        "sample_count": 10
+      },
+      "bybit": {
+        "mean_oi": 69195.92222612594,
+        "stdev_oi": 1.1613433848756118,
+        "min_oi": 69195.22878468632,
+        "max_oi": 69198.10743268624,
+        "range_oi": 2.878647999925306,
+        "coefficient_of_variation": 0.001678340785863722,
+        "stability_rating": "VERY_STABLE",
+        "sample_count": 10
+      },
+      "gateio": {
+        "mean_oi": 68638.97344,
+        "stdev_oi": 32.56819869215481,
+        "min_oi": 68600.6544,
+        "max_oi": 68678.6816,
+        "range_oi": 78.02719999999681,
+        "coefficient_of_variation": 0.04744855154429711,
+        "stability_rating": "VERY_STABLE",
+        "sample_count": 10
+      }
+    },
+    "market_fluctuations": {
+      "bybit": [
+        {
+          "symbol": "BTCUSDT",
+          "mean_oi": 54658.9268,
+          "stdev_oi": 1.124503920253617,
+          "coefficient_of_variation": 0.0020573106463803036,
+          "stability_rating": "VERY_STABLE",
+          "data_points": 10
+        },
+        {
+          "symbol": "BTCPERP",
+          "mean_oi": 1219.848,
+          "stdev_oi": 0.0,
+          "coefficient_of_variation": 0.0,
+          "stability_rating": "VERY_STABLE",
+          "data_points": 10
+        },
+        {
+          "symbol": "BTCUSD",
+          "mean_oi": 13317.147426125945,
+          "stdev_oi": 0.06468108973450581,
+          "coefficient_of_variation": 0.0004856977824516133,
+          "stability_rating": "VERY_STABLE",
+          "data_points": 10
+        }
+      ],
+      "gateio": [
+        {
+          "symbol": "BTC_USDT",
+          "mean_oi": 68638.97344,
+          "stdev_oi": 32.56819869215481,
+          "coefficient_of_variation": 0.04744855154429711,
+          "stability_rating": "VERY_STABLE",
+          "data_points": 10
+        }
+      ]
+    },
+    "data_quality_issues": [],
+    "cross_validation_results": {
+      "gateio": {
+        "our_system": 68668.93280000001,
+        "direct_api": 686584432.1642399,
+        "markets": [
+          {
+            "symbol": "BTC_USDT",
+            "oi_tokens": 686584224.0,
+            "market_type": "USDT"
+          },
+          {
+            "symbol": "BTC_USD",
+            "oi_tokens": 208.1642398614934,
+            "market_type": "USD"
+          }
+        ],
+        "timestamp": "2025-06-26T14:42:41.950469"
+      }
+    },
+    "recommendations": [
+      "\u2705 No critical issues detected. Rankings appear stable and consistent."
+    ]
+  },
+  "raw_samples": [
+    {
+      "timestamp": "2025-06-26 14:42:00.961015",
+      "rankings": [
+        [
+          "binance",
+          105232.50462166803
+        ],
+        [
+          "bybit",
+          69195.639117626
+        ],
+        [
+          "gateio",
+          68600.6544
+        ]
+      ],
+      "sample_id": 1,
+      "source": "system"
+    },
+    {
+      "timestamp": "2025-06-26 14:42:05.422524",
+      "rankings": [
+        [
+          "binance",
+          105232.76696687161
+        ],
+        [
+          "bybit",
+          69195.639117626
+        ],
+        [
+          "gateio",
+          68616.56480000001
+        ]
+      ],
+      "sample_id": 2,
+      "source": "system"
+    },
+    {
+      "timestamp": "2025-06-26 14:42:09.887890",
+      "rankings": [
+        [
+          "binance",
+          105233.0079668716
+        ],
+        [
+          "bybit",
+          69195.22878468632
+        ],
+        [
+          "gateio",
+          68616.56480000001
+        ]
+      ],
+      "sample_id": 3,
+      "source": "system"
+    },
+    {
+      "timestamp": "2025-06-26 14:42:14.300406",
+      "rankings": [
+        [
+          "binance",
+          105233.0079668716
+        ],
+        [
+          "bybit",
+          69195.24114220758
+        ],
+        [
+          "gateio",
+          68616.8768
+        ]
+      ],
+      "sample_id": 4,
+      "source": "system"
+    },
+    {
+      "timestamp": "2025-06-26 14:42:18.708717",
+      "rankings": [
+        [
+          "binance",
+          105233.05596687162
+        ],
+        [
+          "bybit",
+          69195.23858052243
+        ],
+        [
+          "gateio",
+          68617.064
+        ]
+      ],
+      "sample_id": 5,
+      "source": "system"
+    },
+    {
+      "timestamp": "2025-06-26 14:42:23.175585",
+      "rankings": [
+        [
+          "binance",
+          105233.61277542602
+        ],
+        [
+          "bybit",
+          69195.33744152883
+        ],
+        [
+          "gateio",
+          68617.064
+        ]
+      ],
+      "sample_id": 6,
+      "source": "system"
+    },
+    {
+      "timestamp": "2025-06-26 14:42:27.655539",
+      "rankings": [
+        [
+          "binance",
+          105233.61377542603
+        ],
+        [
+          "bybit",
+          69195.34164296306
+        ],
+        [
+          "gateio",
+          68678.6816
+        ]
+      ],
+      "sample_id": 7,
+      "source": "system"
+    },
+    {
+      "timestamp": "2025-06-26 14:42:32.099367",
+      "rankings": [
+        [
+          "binance",
+          105236.03679674154
+        ],
+        [
+          "bybit",
+          69195.34164296306
+        ],
+        [
+          "gateio",
+          68678.66560000001
+        ]
+      ],
+      "sample_id": 8,
+      "source": "system"
+    },
+    {
+      "timestamp": "2025-06-26 14:42:36.655763",
+      "rankings": [
+        [
+          "binance",
+          105235.99579674154
+        ],
+        [
+          "bybit",
+          69198.10735844994
+        ],
+        [
+          "gateio",
+          68678.66560000001
+        ]
+      ],
+      "sample_id": 9,
+      "source": "system"
+    },
+    {
+      "timestamp": "2025-06-26 14:42:41.081919",
+      "rankings": [
+        [
+          "binance",
+          105236.57979674154
+        ],
+        [
+          "bybit",
+          69198.10743268624
+        ],
+        [
+          "gateio",
+          68668.93280000001
+        ]
+      ],
+      "sample_id": 10,
+      "source": "system"
+    }
+  ],
+  "exchange_samples": {
+    "binance": [
+      {
+        "timestamp": "2025-06-26 14:42:00.961028",
+        "exchange": "binance",
+        "total_oi_tokens": 105232.50462166803,
+        "total_oi_usd": 11335278912.802,
+        "markets": [
+          {
+            "timestamp": "2025-06-26 14:42:00.961029",
+            "symbol": "BTCUSDT",
+            "oi_tokens": 76991.694,
+            "oi_usd": 8291851460.412001,
+            "price": 107698.0,
+            "volume_24h": 153458.335,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:00.961045",
+            "symbol": "BTCUSDC",
+            "oi_tokens": 6654.578,
+            "oi_usd": 717064052.3900001,
+            "price": 107755.0,
+            "volume_24h": 20661.784,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:00.961047",
+            "symbol": "BTCUSD_PERP",
+            "oi_tokens": 21586.23262166804,
+            "oi_usd": 2326363400.0,
+            "price": 107770.7,
+            "volume_24h": 17254.563624435956,
+            "source": "system"
+          }
+        ],
+        "market_count": 3,
+        "source": "system"
+      },
+      {
+        "timestamp": "2025-06-26 14:42:05.422725",
+        "exchange": "binance",
+        "total_oi_tokens": 105232.76696687161,
+        "total_oi_usd": 11334837553.4546,
+        "markets": [
+          {
+            "timestamp": "2025-06-26 14:42:05.422730",
+            "symbol": "BTCUSDT",
+            "oi_tokens": 76991.529,
+            "oi_usd": 8291433334.2912,
+            "price": 107692.8,
+            "volume_24h": 153459.014,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:05.422874",
+            "symbol": "BTCUSDC",
+            "oi_tokens": 6654.581,
+            "oi_usd": 717040419.1633999,
+            "price": 107751.4,
+            "volume_24h": 20661.788,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:05.422875",
+            "symbol": "BTCUSD_PERP",
+            "oi_tokens": 21586.65696687161,
+            "oi_usd": 2326363800.0,
+            "price": 107768.6,
+            "volume_24h": 17253.79841623627,
+            "source": "system"
+          }
+        ],
+        "market_count": 3,
+        "source": "system"
+      },
+      {
+        "timestamp": "2025-06-26 14:42:09.887895",
+        "exchange": "binance",
+        "total_oi_tokens": 105233.0079668716,
+        "total_oi_usd": 11334854197.3552,
+        "markets": [
+          {
+            "timestamp": "2025-06-26 14:42:09.887896",
+            "symbol": "BTCUSDT",
+            "oi_tokens": 76991.659,
+            "oi_usd": 8291447334.3552,
+            "price": 107692.8,
+            "volume_24h": 153442.44,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:09.887898",
+            "symbol": "BTCUSDC",
+            "oi_tokens": 6654.692,
+            "oi_usd": 717043063.0,
+            "price": 107750.0,
+            "volume_24h": 20657.627,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:09.887899",
+            "symbol": "BTCUSD_PERP",
+            "oi_tokens": 21586.65696687161,
+            "oi_usd": 2326363800.0,
+            "price": 107768.6,
+            "volume_24h": 17254.29670609064,
+            "source": "system"
+          }
+        ],
+        "market_count": 3,
+        "source": "system"
+      },
+      {
+        "timestamp": "2025-06-26 14:42:14.300449",
+        "exchange": "binance",
+        "total_oi_tokens": 105233.0079668716,
+        "total_oi_usd": 11334854197.3552,
+        "markets": [
+          {
+            "timestamp": "2025-06-26 14:42:14.300453",
+            "symbol": "BTCUSDT",
+            "oi_tokens": 76991.659,
+            "oi_usd": 8291447334.3552,
+            "price": 107692.8,
+            "volume_24h": 153442.73,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:14.300463",
+            "symbol": "BTCUSDC",
+            "oi_tokens": 6654.692,
+            "oi_usd": 717043063.0,
+            "price": 107750.0,
+            "volume_24h": 20657.627,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:14.300476",
+            "symbol": "BTCUSD_PERP",
+            "oi_tokens": 21586.65696687161,
+            "oi_usd": 2326363800.0,
+            "price": 107768.6,
+            "volume_24h": 17254.29670609064,
+            "source": "system"
+          }
+        ],
+        "market_count": 3,
+        "source": "system"
+      },
+      {
+        "timestamp": "2025-06-26 14:42:18.708742",
+        "exchange": "binance",
+        "total_oi_tokens": 105233.05596687162,
+        "total_oi_usd": 11334867065.8374,
+        "markets": [
+          {
+            "timestamp": "2025-06-26 14:42:18.708746",
+            "symbol": "BTCUSDT",
+            "oi_tokens": 76991.706,
+            "oi_usd": 8291460095.0874,
+            "price": 107692.9,
+            "volume_24h": 153443.876,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:18.708764",
+            "symbol": "BTCUSDC",
+            "oi_tokens": 6654.693,
+            "oi_usd": 717043170.75,
+            "price": 107750.0,
+            "volume_24h": 20657.628,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:18.708766",
+            "symbol": "BTCUSD_PERP",
+            "oi_tokens": 21586.65696687161,
+            "oi_usd": 2326363800.0,
+            "price": 107768.6,
+            "volume_24h": 17254.29670609064,
+            "source": "system"
+          }
+        ],
+        "market_count": 3,
+        "source": "system"
+      },
+      {
+        "timestamp": "2025-06-26 14:42:23.175610",
+        "exchange": "binance",
+        "total_oi_tokens": 105233.61277542602,
+        "total_oi_usd": 11334924904.371199,
+        "markets": [
+          {
+            "timestamp": "2025-06-26 14:42:23.175614",
+            "symbol": "BTCUSDT",
+            "oi_tokens": 76991.828,
+            "oi_usd": 8291473233.621199,
+            "price": 107692.9,
+            "volume_24h": 153443.96,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:23.175621",
+            "symbol": "BTCUSDC",
+            "oi_tokens": 6654.693,
+            "oi_usd": 717043170.75,
+            "price": 107750.0,
+            "volume_24h": 20657.628,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:23.175623",
+            "symbol": "BTCUSD_PERP",
+            "oi_tokens": 21587.09177542603,
+            "oi_usd": 2326408500.0,
+            "price": 107768.5,
+            "volume_24h": 17254.31550035493,
+            "source": "system"
+          }
+        ],
+        "market_count": 3,
+        "source": "system"
+      },
+      {
+        "timestamp": "2025-06-26 14:42:27.655573",
+        "exchange": "binance",
+        "total_oi_tokens": 105233.61377542603,
+        "total_oi_usd": 11334925012.2354,
+        "markets": [
+          {
+            "timestamp": "2025-06-26 14:42:27.655575",
+            "symbol": "BTCUSDT",
+            "oi_tokens": 76991.826,
+            "oi_usd": 8291473018.235399,
+            "price": 107692.9,
+            "volume_24h": 153444.956,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:27.655580",
+            "symbol": "BTCUSDC",
+            "oi_tokens": 6654.696,
+            "oi_usd": 717043494.0,
+            "price": 107750.0,
+            "volume_24h": 20657.631,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:27.655581",
+            "symbol": "BTCUSD_PERP",
+            "oi_tokens": 21587.09177542603,
+            "oi_usd": 2326408500.0,
+            "price": 107768.5,
+            "volume_24h": 17254.317356184783,
+            "source": "system"
+          }
+        ],
+        "market_count": 3,
+        "source": "system"
+      },
+      {
+        "timestamp": "2025-06-26 14:42:32.099384",
+        "exchange": "binance",
+        "total_oi_tokens": 105236.03679674154,
+        "total_oi_usd": 11334917205.36,
+        "markets": [
+          {
+            "timestamp": "2025-06-26 14:42:32.099386",
+            "symbol": "BTCUSDT",
+            "oi_tokens": 76991.825,
+            "oi_usd": 8291465211.36,
+            "price": 107692.8,
+            "volume_24h": 153444.985,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:32.099393",
+            "symbol": "BTCUSDC",
+            "oi_tokens": 6654.696,
+            "oi_usd": 717043494.0,
+            "price": 107750.0,
+            "volume_24h": 20657.631,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:32.099395",
+            "symbol": "BTCUSD_PERP",
+            "oi_tokens": 21589.51579674154,
+            "oi_usd": 2326408500.0,
+            "price": 107756.4,
+            "volume_24h": 17262.674885204036,
+            "source": "system"
+          }
+        ],
+        "market_count": 3,
+        "source": "system"
+      },
+      {
+        "timestamp": "2025-06-26 14:42:36.655786",
+        "exchange": "binance",
+        "total_oi_tokens": 105235.99579674154,
+        "total_oi_usd": 11334912789.9552,
+        "markets": [
+          {
+            "timestamp": "2025-06-26 14:42:36.655789",
+            "symbol": "BTCUSDT",
+            "oi_tokens": 76991.784,
+            "oi_usd": 8291460795.9552,
+            "price": 107692.8,
+            "volume_24h": 153445.233,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:36.655797",
+            "symbol": "BTCUSDC",
+            "oi_tokens": 6654.696,
+            "oi_usd": 717043494.0,
+            "price": 107750.0,
+            "volume_24h": 20657.631,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:36.655799",
+            "symbol": "BTCUSD_PERP",
+            "oi_tokens": 21589.51579674154,
+            "oi_usd": 2326408500.0,
+            "price": 107756.4,
+            "volume_24h": 17262.674885204036,
+            "source": "system"
+          }
+        ],
+        "market_count": 3,
+        "source": "system"
+      },
+      {
+        "timestamp": "2025-06-26 14:42:41.081943",
+        "exchange": "binance",
+        "total_oi_tokens": 105236.57979674154,
+        "total_oi_usd": 11334975682.5504,
+        "markets": [
+          {
+            "timestamp": "2025-06-26 14:42:41.081947",
+            "symbol": "BTCUSDT",
+            "oi_tokens": 76992.368,
+            "oi_usd": 8291523688.550401,
+            "price": 107692.8,
+            "volume_24h": 153445.917,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:41.081954",
+            "symbol": "BTCUSDC",
+            "oi_tokens": 6654.696,
+            "oi_usd": 717043494.0,
+            "price": 107750.0,
+            "volume_24h": 20657.631,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:41.081958",
+            "symbol": "BTCUSD_PERP",
+            "oi_tokens": 21589.51579674154,
+            "oi_usd": 2326408500.0,
+            "price": 107756.4,
+            "volume_24h": 17262.69808568215,
+            "source": "system"
+          }
+        ],
+        "market_count": 3,
+        "source": "system"
+      }
+    ],
+    "bybit": [
+      {
+        "timestamp": "2025-06-26 14:42:00.961054",
+        "exchange": "bybit",
+        "total_oi_tokens": 69195.639117626,
+        "total_oi_usd": 7452509373.953501,
+        "markets": [
+          {
+            "timestamp": "2025-06-26 14:42:00.961056",
+            "symbol": "BTCUSDT",
+            "oi_tokens": 54658.711,
+            "oi_usd": 5885917828.1639,
+            "price": 107684.9,
+            "volume_24h": 78917.232,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:00.961058",
+            "symbol": "BTCPERP",
+            "oi_tokens": 1219.848,
+            "oi_usd": 131472411.78959998,
+            "price": 107777.7,
+            "volume_24h": 552.403,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:00.961059",
+            "symbol": "BTCUSD",
+            "oi_tokens": 13317.080117625988,
+            "oi_usd": 1435119134.0,
+            "price": 107765.3,
+            "volume_24h": 5450.450042824546,
+            "source": "system"
+          }
+        ],
+        "market_count": 3,
+        "source": "system"
+      },
+      {
+        "timestamp": "2025-06-26 14:42:05.422879",
+        "exchange": "bybit",
+        "total_oi_tokens": 69195.639117626,
+        "total_oi_usd": 7452503908.082401,
+        "markets": [
+          {
+            "timestamp": "2025-06-26 14:42:05.422879",
+            "symbol": "BTCUSDT",
+            "oi_tokens": 54658.711,
+            "oi_usd": 5885912362.292801,
+            "price": 107684.8,
+            "volume_24h": 78917.262,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:05.422880",
+            "symbol": "BTCPERP",
+            "oi_tokens": 1219.848,
+            "oi_usd": 131472411.78959998,
+            "price": 107777.7,
+            "volume_24h": 552.403,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:05.422881",
+            "symbol": "BTCUSD",
+            "oi_tokens": 13317.080117625988,
+            "oi_usd": 1435119134.0,
+            "price": 107765.3,
+            "volume_24h": 5450.450042824546,
+            "source": "system"
+          }
+        ],
+        "market_count": 3,
+        "source": "system"
+      },
+      {
+        "timestamp": "2025-06-26 14:42:09.887901",
+        "exchange": "bybit",
+        "total_oi_tokens": 69195.22878468632,
+        "total_oi_usd": 7452457058.260001,
+        "markets": [
+          {
+            "timestamp": "2025-06-26 14:42:09.887901",
+            "symbol": "BTCUSDT",
+            "oi_tokens": 54658.298,
+            "oi_usd": 5885867888.470401,
+            "price": 107684.8,
+            "volume_24h": 78917.298,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:09.887902",
+            "symbol": "BTCPERP",
+            "oi_tokens": 1219.848,
+            "oi_usd": 131472411.78959998,
+            "price": 107777.7,
+            "volume_24h": 552.403,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:09.887902",
+            "symbol": "BTCUSD",
+            "oi_tokens": 13317.082784686321,
+            "oi_usd": 1435116758.0,
+            "price": 107765.1,
+            "volume_24h": 5450.460167531046,
+            "source": "system"
+          }
+        ],
+        "market_count": 3,
+        "source": "system"
+      },
+      {
+        "timestamp": "2025-06-26 14:42:14.300487",
+        "exchange": "bybit",
+        "total_oi_tokens": 69195.24114220758,
+        "total_oi_usd": 7452462524.0898,
+        "markets": [
+          {
+            "timestamp": "2025-06-26 14:42:14.300489",
+            "symbol": "BTCUSDT",
+            "oi_tokens": 54658.298,
+            "oi_usd": 5885873354.3001995,
+            "price": 107684.9,
+            "volume_24h": 78917.302,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:14.300491",
+            "symbol": "BTCPERP",
+            "oi_tokens": 1219.848,
+            "oi_usd": 131472411.78959998,
+            "price": 107777.7,
+            "volume_24h": 552.403,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:14.300493",
+            "symbol": "BTCUSD",
+            "oi_tokens": 13317.095142207581,
+            "oi_usd": 1435116758.0,
+            "price": 107765.0,
+            "volume_24h": 5450.466181042082,
+            "source": "system"
+          }
+        ],
+        "market_count": 3,
+        "source": "system"
+      },
+      {
+        "timestamp": "2025-06-26 14:42:18.708773",
+        "exchange": "bybit",
+        "total_oi_tokens": 69195.23858052243,
+        "total_oi_usd": 7452456782.520801,
+        "markets": [
+          {
+            "timestamp": "2025-06-26 14:42:18.708774",
+            "symbol": "BTCUSDT",
+            "oi_tokens": 54658.294,
+            "oi_usd": 5885867457.7312,
+            "price": 107684.8,
+            "volume_24h": 78917.307,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:18.708776",
+            "symbol": "BTCPERP",
+            "oi_tokens": 1219.848,
+            "oi_usd": 131472411.78959998,
+            "price": 107777.7,
+            "volume_24h": 552.403,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:18.708778",
+            "symbol": "BTCUSD",
+            "oi_tokens": 13317.096580522433,
+            "oi_usd": 1435116913.0,
+            "price": 107765.0,
+            "volume_24h": 5450.466181042082,
+            "source": "system"
+          }
+        ],
+        "market_count": 3,
+        "source": "system"
+      },
+      {
+        "timestamp": "2025-06-26 14:42:23.175631",
+        "exchange": "bybit",
+        "total_oi_tokens": 69195.33744152883,
+        "total_oi_usd": 7452456782.520801,
+        "markets": [
+          {
+            "timestamp": "2025-06-26 14:42:23.175632",
+            "symbol": "BTCUSDT",
+            "oi_tokens": 54658.294,
+            "oi_usd": 5885867457.7312,
+            "price": 107684.8,
+            "volume_24h": 78875.258,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:23.175634",
+            "symbol": "BTCPERP",
+            "oi_tokens": 1219.848,
+            "oi_usd": 131472411.78959998,
+            "price": 107777.7,
+            "volume_24h": 552.403,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:23.175637",
+            "symbol": "BTCUSD",
+            "oi_tokens": 13317.19544152882,
+            "oi_usd": 1435116913.0,
+            "price": 107764.2,
+            "volume_24h": 5450.507636116633,
+            "source": "system"
+          }
+        ],
+        "market_count": 3,
+        "source": "system"
+      },
+      {
+        "timestamp": "2025-06-26 14:42:27.655584",
+        "exchange": "bybit",
+        "total_oi_tokens": 69195.34164296306,
+        "total_oi_usd": 7452462701.0351,
+        "markets": [
+          {
+            "timestamp": "2025-06-26 14:42:27.655585",
+            "symbol": "BTCUSDT",
+            "oi_tokens": 54658.295,
+            "oi_usd": 5885873031.2455,
+            "price": 107684.9,
+            "volume_24h": 78876.152,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:27.655586",
+            "symbol": "BTCPERP",
+            "oi_tokens": 1219.848,
+            "oi_usd": 131472411.78959998,
+            "price": 107777.7,
+            "volume_24h": 552.403,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:27.655587",
+            "symbol": "BTCUSD",
+            "oi_tokens": 13317.198642963062,
+            "oi_usd": 1435117258.0,
+            "price": 107764.2,
+            "volume_24h": 5450.507951620297,
+            "source": "system"
+          }
+        ],
+        "market_count": 3,
+        "source": "system"
+      },
+      {
+        "timestamp": "2025-06-26 14:42:32.099402",
+        "exchange": "bybit",
+        "total_oi_tokens": 69195.34164296306,
+        "total_oi_usd": 7452462701.0351,
+        "markets": [
+          {
+            "timestamp": "2025-06-26 14:42:32.099404",
+            "symbol": "BTCUSDT",
+            "oi_tokens": 54658.295,
+            "oi_usd": 5885873031.2455,
+            "price": 107684.9,
+            "volume_24h": 78878.178,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:32.099406",
+            "symbol": "BTCPERP",
+            "oi_tokens": 1219.848,
+            "oi_usd": 131472411.78959998,
+            "price": 107777.7,
+            "volume_24h": 552.403,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:32.099409",
+            "symbol": "BTCUSD",
+            "oi_tokens": 13317.198642963062,
+            "oi_usd": 1435117258.0,
+            "price": 107764.2,
+            "volume_24h": 5450.507951620297,
+            "source": "system"
+          }
+        ],
+        "market_count": 3,
+        "source": "system"
+      },
+      {
+        "timestamp": "2025-06-26 14:42:36.655808",
+        "exchange": "bybit",
+        "total_oi_tokens": 69198.10735844994,
+        "total_oi_usd": 7452757865.346,
+        "markets": [
+          {
+            "timestamp": "2025-06-26 14:42:36.655809",
+            "symbol": "BTCUSDT",
+            "oi_tokens": 54661.036,
+            "oi_usd": 5886168195.556399,
+            "price": 107684.9,
+            "volume_24h": 78878.42,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:36.655811",
+            "symbol": "BTCPERP",
+            "oi_tokens": 1219.848,
+            "oi_usd": 131472411.78959998,
+            "price": 107777.7,
+            "volume_24h": 552.403,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:36.655812",
+            "symbol": "BTCUSD",
+            "oi_tokens": 13317.223358449946,
+            "oi_usd": 1435117258.0,
+            "price": 107764.0,
+            "volume_24h": 5450.5216306002,
+            "source": "system"
+          }
+        ],
+        "market_count": 3,
+        "source": "system"
+      },
+      {
+        "timestamp": "2025-06-26 14:42:41.081965",
+        "exchange": "bybit",
+        "total_oi_tokens": 69198.10743268624,
+        "total_oi_usd": 7452757873.346,
+        "markets": [
+          {
+            "timestamp": "2025-06-26 14:42:41.081967",
+            "symbol": "BTCUSDT",
+            "oi_tokens": 54661.036,
+            "oi_usd": 5886168195.556399,
+            "price": 107684.9,
+            "volume_24h": 78878.424,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:41.081970",
+            "symbol": "BTCPERP",
+            "oi_tokens": 1219.848,
+            "oi_usd": 131472411.78959998,
+            "price": 107777.7,
+            "volume_24h": 552.403,
+            "source": "system"
+          },
+          {
+            "timestamp": "2025-06-26 14:42:41.081973",
+            "symbol": "BTCUSD",
+            "oi_tokens": 13317.22343268624,
+            "oi_usd": 1435117266.0,
+            "price": 107764.0,
+            "volume_24h": 5449.477144500946,
+            "source": "system"
+          }
+        ],
+        "market_count": 3,
+        "source": "system"
+      }
+    ],
+    "gateio": [
+      {
+        "timestamp": "2025-06-26 14:42:00.961063",
+        "exchange": "gateio",
+        "total_oi_tokens": 68600.6544,
+        "total_oi_usd": 7387474131.09264,
+        "markets": [
+          {
+            "timestamp": "2025-06-26 14:42:00.961063",
+            "symbol": "BTC_USDT",
+            "oi_tokens": 68600.6544,
+            "oi_usd": 7387474131.09264,
+            "price": 107688.1,
+            "volume_24h": 5995.022644099023,
+            "source": "system"
+          }
+        ],
+        "market_count": 1,
+        "source": "system"
+      },
+      {
+        "timestamp": "2025-06-26 14:42:05.422882",
+        "exchange": "gateio",
+        "total_oi_tokens": 68616.56480000001,
+        "total_oi_usd": 7389146321.900001,
+        "markets": [
+          {
+            "timestamp": "2025-06-26 14:42:05.422883",
+            "symbol": "BTC_USDT",
+            "oi_tokens": 68616.56480000001,
+            "oi_usd": 7389146321.900001,
+            "price": 107687.5,
+            "volume_24h": 5995.05953801509,
+            "source": "system"
+          }
+        ],
+        "market_count": 1,
+        "source": "system"
+      },
+      {
+        "timestamp": "2025-06-26 14:42:09.887904",
+        "exchange": "gateio",
+        "total_oi_tokens": 68616.56480000001,
+        "total_oi_usd": 7389146321.900001,
+        "markets": [
+          {
+            "timestamp": "2025-06-26 14:42:09.887904",
+            "symbol": "BTC_USDT",
+            "oi_tokens": 68616.56480000001,
+            "oi_usd": 7389146321.900001,
+            "price": 107687.5,
+            "volume_24h": 5995.361021474173,
+            "source": "system"
+          }
+        ],
+        "market_count": 1,
+        "source": "system"
+      },
+      {
+        "timestamp": "2025-06-26 14:42:14.300498",
+        "exchange": "gateio",
+        "total_oi_tokens": 68616.8768,
+        "total_oi_usd": 7389179920.4,
+        "markets": [
+          {
+            "timestamp": "2025-06-26 14:42:14.300499",
+            "symbol": "BTC_USDT",
+            "oi_tokens": 68616.8768,
+            "oi_usd": 7389179920.4,
+            "price": 107687.5,
+            "volume_24h": 5995.361021474173,
+            "source": "system"
+          }
+        ],
+        "market_count": 1,
+        "source": "system"
+      },
+      {
+        "timestamp": "2025-06-26 14:42:18.708781",
+        "exchange": "gateio",
+        "total_oi_tokens": 68617.064,
+        "total_oi_usd": 7389200079.5,
+        "markets": [
+          {
+            "timestamp": "2025-06-26 14:42:18.708782",
+            "symbol": "BTC_USDT",
+            "oi_tokens": 68617.064,
+            "oi_usd": 7389200079.5,
+            "price": 107687.5,
+            "volume_24h": 5995.361021474173,
+            "source": "system"
+          }
+        ],
+        "market_count": 1,
+        "source": "system"
+      },
+      {
+        "timestamp": "2025-06-26 14:42:23.175652",
+        "exchange": "gateio",
+        "total_oi_tokens": 68617.064,
+        "total_oi_usd": 7389200079.5,
+        "markets": [
+          {
+            "timestamp": "2025-06-26 14:42:23.175654",
+            "symbol": "BTC_USDT",
+            "oi_tokens": 68617.064,
+            "oi_usd": 7389200079.5,
+            "price": 107687.5,
+            "volume_24h": 5995.407377829368,
+            "source": "system"
+          }
+        ],
+        "market_count": 1,
+        "source": "system"
+      },
+      {
+        "timestamp": "2025-06-26 14:42:27.655589",
+        "exchange": "gateio",
+        "total_oi_tokens": 68678.6816,
+        "total_oi_usd": 7395869864.1407995,
+        "markets": [
+          {
+            "timestamp": "2025-06-26 14:42:27.655589",
+            "symbol": "BTC_USDT",
+            "oi_tokens": 68678.6816,
+            "oi_usd": 7395869864.1407995,
+            "price": 107688.0,
+            "volume_24h": 5995.38843696605,
+            "source": "system"
+          }
+        ],
+        "market_count": 1,
+        "source": "system"
+      },
+      {
+        "timestamp": "2025-06-26 14:42:32.099414",
+        "exchange": "gateio",
+        "total_oi_tokens": 68678.66560000001,
+        "total_oi_usd": 7395936819.798401,
+        "markets": [
+          {
+            "timestamp": "2025-06-26 14:42:32.099415",
+            "symbol": "BTC_USDT",
+            "oi_tokens": 68678.66560000001,
+            "oi_usd": 7395936819.798401,
+            "price": 107689.0,
+            "volume_24h": 5999.1947181234855,
+            "source": "system"
+          }
+        ],
+        "market_count": 1,
+        "source": "system"
+      },
+      {
+        "timestamp": "2025-06-26 14:42:36.655816",
+        "exchange": "gateio",
+        "total_oi_tokens": 68678.66560000001,
+        "total_oi_usd": 7395936819.798401,
+        "markets": [
+          {
+            "timestamp": "2025-06-26 14:42:36.655817",
+            "symbol": "BTC_USDT",
+            "oi_tokens": 68678.66560000001,
+            "oi_usd": 7395936819.798401,
+            "price": 107689.0,
+            "volume_24h": 5999.1947181234855,
+            "source": "system"
+          }
+        ],
+        "market_count": 1,
+        "source": "system"
+      },
+      {
+        "timestamp": "2025-06-26 14:42:41.081979",
+        "exchange": "gateio",
+        "total_oi_tokens": 68668.93280000001,
+        "total_oi_usd": 7395156513.13712,
+        "markets": [
+          {
+            "timestamp": "2025-06-26 14:42:41.081980",
+            "symbol": "BTC_USDT",
+            "oi_tokens": 68668.93280000001,
+            "oi_usd": 7395156513.13712,
+            "price": 107692.9,
+            "volume_24h": 5998.980861319549,
+            "source": "system"
+          }
+        ],
+        "market_count": 1,
+        "source": "system"
+      }
+    ]
+  }
+}

@@ -1,0 +1,135 @@
+{
+  "timestamp": "2025-06-26T14:25:54.357949",
+  "validation_results": {
+    "binance": {
+      "our_system_btc": 105248.25866795164,
+      "our_system_usd": 11335392101.568,
+      "direct_api_btc": 83653.06999999999,
+      "direct_api_usd": 0.0,
+      "coinglass_expected_btc": 110780,
+      "coinglass_expected_usd": 11920000000.0,
+      "discrepancy_btc": 5531.741332048361,
+      "discrepancy_usd": 584607898.4319992,
+      "validation_passed": true,
+      "error_messages": [],
+      "markets_found": [
+        {
+          "source": "our_system",
+          "type": "USDT",
+          "symbol": "BTCUSDT",
+          "oi_tokens": 76995.28,
+          "oi_usd": 8291051938.128,
+          "price": 107682.6
+        },
+        {
+          "source": "our_system",
+          "type": "USDC",
+          "symbol": "BTCUSDC",
+          "oi_tokens": 6657.79,
+          "oi_usd": 717283663.4399999,
+          "price": 107736.0
+        },
+        {
+          "source": "our_system",
+          "type": "USD",
+          "symbol": "BTCUSD_PERP",
+          "oi_tokens": 21595.188667951643,
+          "oi_usd": 2327056500.0,
+          "price": 107758.1
+        },
+        {
+          "source": "direct_api",
+          "type": "USDT",
+          "symbol": "BTCUSDT",
+          "oi_tokens": 76995.28,
+          "oi_usd": 0.0,
+          "price": 0.0
+        },
+        {
+          "source": "direct_api",
+          "type": "USDC",
+          "symbol": "BTCUSDC",
+          "oi_tokens": 6657.79,
+          "oi_usd": 0.0,
+          "price": 0.0
+        }
+      ]
+    },
+    "bybit": {
+      "our_system_btc": 69184.85612458966,
+      "our_system_usd": 7450177602.0247,
+      "direct_api_btc": 0.0,
+      "direct_api_usd": 0.0,
+      "coinglass_expected_btc": 70790,
+      "coinglass_expected_usd": 7620000000.0,
+      "discrepancy_btc": 1605.1438754103438,
+      "discrepancy_usd": 169822397.97529984,
+      "validation_passed": true,
+      "error_messages": [],
+      "markets_found": [
+        {
+          "source": "our_system",
+          "type": "USDT",
+          "symbol": "BTCUSDT",
+          "oi_tokens": 54646.763,
+          "oi_usd": 5883822436.8863,
+          "price": 107670.1
+        },
+        {
+          "source": "our_system",
+          "type": "USDC",
+          "symbol": "BTCPERP",
+          "oi_tokens": 1220.082,
+          "oi_usd": 131428697.1384,
+          "price": 107721.2
+        },
+        {
+          "source": "our_system",
+          "type": "USD",
+          "symbol": "BTCUSD",
+          "oi_tokens": 13318.01112458965,
+          "oi_usd": 1434926468.0,
+          "price": 107743.3
+        }
+      ]
+    },
+    "gateio": {
+      "our_system_btc": 68506.29920000001,
+      "our_system_usd": 7376984368.643361,
+      "direct_api_btc": 685054096.2449971,
+      "direct_api_usd": 73772653557792.4,
+      "coinglass_expected_btc": 69060,
+      "coinglass_expected_usd": 7430000000.0,
+      "discrepancy_btc": 553.7007999999914,
+      "discrepancy_usd": 53015631.35663891,
+      "validation_passed": true,
+      "error_messages": [],
+      "markets_found": [
+        {
+          "source": "our_system",
+          "type": "USDT",
+          "symbol": "BTC_USDT",
+          "oi_tokens": 68506.29920000001,
+          "oi_usd": 7376984368.643361,
+          "price": 107683.3
+        },
+        {
+          "source": "direct_api",
+          "type": "USDT",
+          "symbol": "BTC_USDT",
+          "oi_tokens": 685053888.0,
+          "oi_usd": 73772631134054.4,
+          "price": 107688.8
+        },
+        {
+          "source": "direct_api",
+          "type": "USD",
+          "symbol": "BTC_USD",
+          "oi_tokens": 208.24499719538332,
+          "oi_usd": 22423738.0,
+          "price": 107679.6
+        }
+      ]
+    }
+  }
+}

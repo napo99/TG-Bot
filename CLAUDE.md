@@ -21,6 +21,27 @@ Advanced cryptocurrency market analysis platform with institutional-grade featur
 - **Comprehensive Display**: All market data in single coherent view
 - **Institutional Intelligence**: Separate tracking of smart money vs retail sentiment
 
+## Tech Stack & Deployment
+
+### ⚠️ CRITICAL: Always Use Docker
+- **Production Environment**: Docker containers with docker-compose
+- **Service Communication**: Inter-container networking (crypto-market-data:8001)
+- **Local Testing**: Must use Docker, not direct Python execution
+- **TG Bot Config**: Connects to `crypto-market-data:8001` service name
+
+### Docker Services
+```bash
+# Start all services
+docker-compose up -d
+
+# Check running containers  
+docker ps
+
+# View logs
+docker-compose logs -f telegram-bot
+docker-compose logs -f market-data
+```
+
 ## Architecture
 
 ### Core Services
