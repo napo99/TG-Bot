@@ -220,6 +220,14 @@ Before deploying agents in future sessions:
 
 **Remember: The goal is efficient problem-solving, not agent creation for its own sake.**
 
+### 🚀 **For Advanced Parallel Agent Development**
+See `PARALLEL_AGENT_ORCHESTRATION.md` for:
+- Role-based agent specialization (Architect, Senior Dev, Exchange Specialist, etc.)
+- External validation frameworks to prevent hallucinations
+- Cross-agent consistency validation
+- Production environment validation protocols
+- Anti-hallucination detection strategies
+
 ### ⚠️ **CRITICAL: DOCKER-FIRST DEVELOPMENT**
 
 **NEVER FORGET**: This system ALWAYS uses Docker containers in production.
