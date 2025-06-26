@@ -156,7 +156,9 @@ class OKXOIProvider(BaseExchangeOIProvider):
                 
             ticker_data = ticker_response['data'][0]
             price = float(ticker_data['last'])
-            volume_24h = float(ticker_data['vol24h'])
+            # CRITICAL FIX: Use volCcy24h for base currency volume (BTC), not vol24h (contracts)
+            volume_24h_base = float(ticker_data.get('volCcy24h', 0))  # Volume in base currency (BTC)
+            volume_24h_contracts = float(ticker_data.get('vol24h', 0))  # Volume in contracts
             
             # Extract funding data
             funding_rate = 0.0  # Default if not available
@@ -170,13 +172,13 @@ class OKXOIProvider(BaseExchangeOIProvider):
             if market_type in [MarketType.USDT, MarketType.USDC]:
                 # Linear markets: Use oiCcy for base currency amount (BTC)
                 oi_tokens = float(oi_data['oiCcy'])  # Open interest in base currency (BTC)
-                # Volume in base currency
-                volume_24h = volume_24h  # Already in base currency
+                # VOLUME FIX: Use volCcy24h for base currency volume (BTC)
+                volume_24h = volume_24h_base  # Volume in base currency (BTC)
                 
                 # Calculate USD values
                 oi_usd = oi_tokens * price
                 volume_24h_usd = volume_24h * price
-                calculation_method = f"linear: {oi_tokens:,.0f} × ${price:,.2f} (oiCcy)"
+                calculation_method = f"linear: {oi_tokens:,.0f} × ${price:,.2f} (oiCcy), vol: {volume_24h:,.0f} BTC"
                 
             else:  # MarketType.USD (inverse)
                 # Inverse markets: oi in contracts, oiCcy in base currency
@@ -201,9 +203,9 @@ class OKXOIProvider(BaseExchangeOIProvider):
                     logger.warning(f"⚠️ OKX {market_type.value} no valid OI data")
                     return None
                 
-                # Volume calculation for inverse
-                volume_24h_usd = volume_24h * 100  # Volume in contracts × $100
-                volume_24h = volume_24h_usd / price
+                # Volume calculation for inverse - FIXED: Use volCcy24h for BTC volume
+                volume_24h = volume_24h_base  # Volume in base currency (BTC) from volCcy24h
+                volume_24h_usd = volume_24h * price
             
             return MarketOIData(
                 exchange="okx",

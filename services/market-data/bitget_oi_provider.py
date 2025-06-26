@@ -29,10 +29,10 @@ class BitgetOIProvider(BaseExchangeOIProvider):
         super().__init__("bitget")
         self.api_base = "https://api.bitget.com"
         
-        # Bitget V2 API endpoints
+        # Bitget V1 API endpoints (V2 returns 400 errors)
         self.endpoints = {
-            'ticker': f"{self.api_base}/api/v2/mix/market/ticker",
-            'funding': f"{self.api_base}/api/v2/mix/market/current-fund-rate"
+            'ticker': f"{self.api_base}/api/mix/v1/market/ticker",
+            'funding': f"{self.api_base}/api/mix/v1/market/current-fund-rate"
         }
         
         # Bitget product types
@@ -130,16 +130,16 @@ class BitgetOIProvider(BaseExchangeOIProvider):
             async with session.get(self.endpoints['funding'], params=funding_params) as response:
                 funding_response = await response.json()
             
-            # Validate ticker response
-            if (ticker_response.get('code') != '00000' or 
-                not ticker_response.get('data')):
+            # Validate ticker response (V1 API doesn't use 'code' field)
+            if not ticker_response.get('data'):
                 logger.warning(f"⚠️ Bitget USDT ticker data unavailable for {symbol}")
                 return None
             
             ticker_data = ticker_response['data']
             
-            # Extract data from ticker
-            price = float(ticker_data['lastPr'])
+            # Extract data from ticker (using correct field names from API)
+            price = float(ticker_data['last'])  # Price field is 'last', not 'lastPr'
+            # Use baseVolume field which contains 24h volume in base currency (BTC)
             volume_24h = float(ticker_data.get('baseVolume', 0))
             
             # Extract OI data
@@ -153,10 +153,9 @@ class BitgetOIProvider(BaseExchangeOIProvider):
                 logger.warning(f"⚠️ Bitget USDT: No OI field found for {symbol}")
                 return None
             
-            # Extract funding rate
+            # Extract funding rate (V1 API doesn't use 'code' field)
             funding_rate = 0.0
-            if (funding_response.get('code') == '00000' and 
-                funding_response.get('data')):
+            if funding_response.get('data'):
                 funding_data = funding_response['data']
                 funding_rate = float(funding_data.get('fundingRate', 0))
             
@@ -204,16 +203,16 @@ class BitgetOIProvider(BaseExchangeOIProvider):
             async with session.get(self.endpoints['funding'], params=funding_params) as response:
                 funding_response = await response.json()
             
-            # Validate ticker response
-            if (ticker_response.get('code') != '00000' or 
-                not ticker_response.get('data')):
+            # Validate ticker response (V1 API doesn't use 'code' field)
+            if not ticker_response.get('data'):
                 logger.warning(f"⚠️ Bitget USD ticker data unavailable for {symbol}")
                 return None
             
             ticker_data = ticker_response['data']
             
-            # Extract data
-            price = float(ticker_data['lastPr'])
+            # Extract data (using correct field names from API)
+            price = float(ticker_data['last'])  # Price field is 'last', not 'lastPr'
+            # Use baseVolume field which contains 24h volume in base currency (BTC)
             volume_24h = float(ticker_data.get('baseVolume', 0))
             
             # Extract OI data for inverse contracts
@@ -238,10 +237,9 @@ class BitgetOIProvider(BaseExchangeOIProvider):
                 logger.warning(f"⚠️ Bitget USD: No OI field found for {symbol}")
                 return None
             
-            # Extract funding rate
+            # Extract funding rate (V1 API doesn't use 'code' field)
             funding_rate = 0.0
-            if (funding_response.get('code') == '00000' and 
-                funding_response.get('data')):
+            if funding_response.get('data'):
                 funding_data = funding_response['data']
                 funding_rate = float(funding_data.get('fundingRate', 0))
             

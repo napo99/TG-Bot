@@ -152,19 +152,13 @@ class GateIOOIProviderWorking(BaseExchangeOIProvider):
                 funding_rate = float(ticker.get('funding_rate', 0))
                 volume_24h_usd = float(ticker.get('volume_24h', 0))  # This is in USD
                 
-                # CRITICAL FIX: Use total_size which is the actual Open Interest
-                total_size = float(ticker.get('total_size', 0))  # This is the actual OI field
+                # CRITICAL FIX: Use total_size with quanto_multiplier conversion
+                total_size = float(ticker.get('total_size', 0))  # This is in contract units
+                quanto_multiplier = float(ticker.get('quanto_multiplier', 0.0001))  # Default 0.0001 for most contracts
                 
-                if settlement == 'USD':  # Inverse
-                    # For inverse contracts, total_size is in USD, convert to BTC
-                    oi_usd_value = total_size
-                    oi_tokens = oi_usd_value / price if price > 0 else 0
-                    calculation_method = f"inverse: ${oi_usd_value:,.0f} ÷ ${price:,.2f} = {oi_tokens:,.0f} BTC"
-                else:  # Linear USDT/USDC
-                    # For linear contracts, total_size is in quote currency (USDT/USDC), convert to BTC
-                    oi_quote_value = total_size
-                    oi_tokens = oi_quote_value / price if price > 0 else 0
-                    calculation_method = f"linear: ${oi_quote_value:,.0f} ÷ ${price:,.2f} = {oi_tokens:,.0f} BTC"
+                # Convert contract units to BTC using quanto_multiplier
+                oi_tokens = total_size * quanto_multiplier
+                calculation_method = f"contracts: {total_size:,.0f} × {quanto_multiplier} = {oi_tokens:,.0f} BTC"
                 
                 oi_usd = oi_tokens * price
                 volume_24h = volume_24h_usd / price if price > 0 else 0
