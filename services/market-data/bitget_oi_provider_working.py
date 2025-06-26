@@ -159,7 +159,9 @@ class BitgetOIProviderWorking(BaseExchangeOIProvider):
                     return None
                 
                 price = float(ticker.get('last', 0))
-                volume_24h_usd = float(ticker.get('usdtVol', 0))
+                # Fix: Use baseVolume for BTC volume, not usdtVol
+                base_volume_24h = float(ticker.get('baseVolume', 0))  # 24h volume in BTC
+                volume_24h_usd = float(ticker.get('usdtVolume', 0))   # 24h volume in USD
                 funding_rate = float(ticker.get('fundingRate', 0))
             
             # Step 3: Calculate token amounts (CORRECTED calculation)
@@ -167,13 +169,13 @@ class BitgetOIProviderWorking(BaseExchangeOIProvider):
                 # For inverse contracts, amount is in contracts, convert to BTC
                 oi_tokens = open_interest  # Contract amount in BTC
                 oi_usd = oi_tokens * price
-                volume_24h = volume_24h_usd / price if price > 0 else 0
+                volume_24h = base_volume_24h  # Use base volume directly (already in BTC)
                 calculation_method = f"inverse: {oi_tokens:,.0f} BTC contracts × ${price:,.2f}"
             else:  # Linear USDT
                 # For linear contracts, amount is in token units (BTC)
                 oi_tokens = open_interest  # Already in BTC
                 oi_usd = oi_tokens * price
-                volume_24h = volume_24h_usd / price if price > 0 else 0
+                volume_24h = base_volume_24h  # Use base volume directly (already in BTC)
                 calculation_method = f"linear: {oi_tokens:,.0f} BTC × ${price:,.2f}"
             
             if oi_tokens <= 0 or price <= 0:

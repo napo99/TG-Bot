@@ -145,9 +145,15 @@ class GateIOOIProvider(BaseExchangeOIProvider):
             if 'size_24h' in ticker_data:
                 volume_24h = float(ticker_data['size_24h'])
             
-            # Extract OI if available (Gate.io may not always provide OI in ticker)
+            # Gate.io OI extraction with proper contract conversion
             oi_tokens = 0.0
-            if 'open_interest' in ticker_data:
+            if 'total_size' in ticker_data:
+                # Use total_size (total open interest in contract units)
+                total_size = float(ticker_data['total_size'])
+                quanto_multiplier = float(ticker_data.get('quanto_multiplier', 0.0001))
+                oi_tokens = total_size * quanto_multiplier
+                logger.info(f"📊 Gate.io USDT: Using total_size {total_size:,.0f} × {quanto_multiplier} = {oi_tokens:,.0f} BTC")
+            elif 'open_interest' in ticker_data:
                 oi_tokens = float(ticker_data['open_interest'])
             elif 'funding_size' in ticker_data:
                 # Use funding_size as OI proxy if available
@@ -155,7 +161,7 @@ class GateIOOIProvider(BaseExchangeOIProvider):
             else:
                 # Estimate OI from volume (conservative estimate: OI = volume/10)
                 oi_tokens = volume_24h / 10.0
-                logger.info(f"📊 Gate.io USDT: Estimating OI from volume ({symbol})")
+                logger.warning(f"⚠️ Gate.io USDT: Estimating OI from volume ({symbol})")
             
             # Extract funding rate
             funding_rate = 0.0
