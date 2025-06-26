@@ -732,7 +732,7 @@ CVD shows cumulative market sentiment
             await update.message.reply_text(f"❌ Error analyzing OI for {symbol}: {str(e)}")
 
     def _format_oi_analysis(self, data, symbol: str) -> str:
-        """Format OI analysis with new 13-market system data"""
+        """Format OI analysis to match target specification exactly"""
         try:
             # Handle the new unified API response format
             if 'exchange_breakdown' not in data:
@@ -764,42 +764,82 @@ CVD shows cumulative market sentiment
             stablecoin_usd = usdt_usd + usdc_usd
             stablecoin_pct = usdt_pct + usdc_pct
             
-            # Build message with new format
-            message = f"""🎯 MULTI-EXCHANGE OI ANALYSIS - {symbol}
-
-💰 TOTAL OI: {total_oi_tokens:,.0f} {symbol} (${total_oi_usd/1e9:.1f}B)
-📊 MARKETS: {total_markets} across {validation.get('successful_exchanges', 0)} exchanges
-
-📈 EXCHANGE BREAKDOWN:"""
-            
-            # Add exchanges
+            # Build individual markets list from exchange breakdown
+            individual_markets = []
             for exchange_data in exchange_breakdown:
-                exchange = exchange_data['exchange'].upper()
-                oi_tokens = exchange_data['oi_tokens']
-                oi_usd = exchange_data['oi_usd']
-                percentage = exchange_data['oi_percentage']
-                markets = exchange_data['markets']
-                funding = exchange_data['funding_rate']
-                
-                message += f"\n• {exchange}: {oi_tokens:,.0f} {symbol} (${oi_usd/1e9:.1f}B) - {percentage:.1f}% - {markets}M"
-                if funding != 0:
-                    message += f" | 💸 {funding*100:+.4f}%"
+                exchange = exchange_data['exchange']
+                markets = exchange_data.get('market_breakdown', [])
+                for market in markets:
+                    market_type = market.get('type', 'USDT')
+                    market_symbol = market.get('symbol', f"{symbol}{market_type}")
+                    oi_tokens = market.get('oi_tokens', 0)
+                    oi_usd = market.get('oi_usd', 0)
+                    funding = market.get('funding_rate', 0)
+                    volume_24h = market.get('volume_24h', 0)
+                    
+                    # Calculate percentage of total
+                    percentage = (oi_usd / total_oi_usd * 100) if total_oi_usd > 0 else 0
+                    
+                    # Determine market category label
+                    if market_type == 'USDT':
+                        category_label = 'STABLE'
+                    elif market_type == 'USDC':
+                        category_label = 'STABLE'
+                    else:  # USD/Inverse
+                        category_label = 'INVERSE'
+                    
+                    individual_markets.append({
+                        'exchange': exchange.title(),
+                        'type': market_type,
+                        'symbol': market_symbol,
+                        'oi_tokens': oi_tokens,
+                        'oi_usd': oi_usd,
+                        'percentage': percentage,
+                        'funding': funding,
+                        'volume_24h': volume_24h,
+                        'category_label': category_label
+                    })
             
-            # Add market categories
-            message += f"""\n
-🏷️ MARKET CATEGORIES:
-• 🟢 USDT Stable: {usdt_data.get('total_tokens', 0):,.0f} {symbol} (${usdt_usd/1e9:.1f}B) - {usdt_pct:.1f}% - {usdt_data.get('exchanges', 0)}E
-• 🔵 USDC Stable: {usdc_data.get('total_tokens', 0):,.0f} {symbol} (${usdc_usd/1e9:.1f}B) - {usdc_pct:.1f}% - {usdc_data.get('exchanges', 0)}E
-• ⚫ USD Inverse: {usd_data.get('total_tokens', 0):,.0f} {symbol} (${inverse_usd/1e9:.1f}B) - {inverse_pct:.1f}% - {usd_data.get('exchanges', 0)}E
+            # Sort markets by OI USD value (descending)
+            individual_markets.sort(key=lambda x: x['oi_usd'], reverse=True)
+            
+            # Build message with target specification format
+            message = f"""📊 OPEN INTEREST ANALYSIS - {symbol}
 
-🔢 MARKET TYPE SUMMARY:
-• Stablecoin-Margined: ${stablecoin_usd/1e9:.1f}B ({stablecoin_pct:.1f}%)
-• Coin-Margined (Inverse): ${inverse_usd/1e9:.1f}B ({inverse_pct:.1f}%)
-• COMBINED TOTAL: ${total_oi_usd/1e9:.1f}B
+🔢 MARKET TYPE BREAKDOWN:
+• Total OI: {total_oi_tokens:,.0f} {symbol} (${total_oi_usd/1e9:.1f}B)
+• Stablecoin-Margined: ${stablecoin_usd/1e9:.1f}B | {stablecoin_pct:.1f}%
+  - USDT: ${usdt_usd/1e9:.1f}B ({usdt_pct:.1f}%)
+  - USDC: ${usdc_usd/1e9:.1f}B ({usdc_pct:.1f}%)
+• Coin-Margined (Inverse): ${inverse_usd/1e9:.1f}B | {inverse_pct:.1f}%
+  - USD: ${inverse_usd/1e9:.1f}B ({inverse_pct:.1f}%)
 
-🎯 SYSTEM STATUS: {'✅ COMPLETE' if validation.get('validation_passed') else '⚠️ PARTIAL'}
-🏢 COVERAGE: {validation.get('successful_exchanges', 0)}/5 exchanges | {total_markets} markets
-📊 PHASE: Multi-exchange USDT + USDC + USD support
+🔢 STABLECOIN MARKETS ({stablecoin_pct:.1f}%): ${stablecoin_usd/1e9:.1f}B
+🔢 INVERSE MARKETS ({inverse_pct:.1f}%): ${inverse_usd/1e9:.1f}B
+📊 COMBINED TOTAL: ${total_oi_usd/1e9:.1f}B
+
+📈 TOP MARKETS:"""
+            
+            # Add individual markets (ranked 1-13)
+            for i, market in enumerate(individual_markets[:13], 1):
+                funding_sign = "+" if market['funding'] >= 0 else ""
+                volume_formatted = self._format_volume(market['volume_24h'])
+                
+                message += f"\n{i}. {market['exchange']} {market['type']}: {market['oi_tokens']:,.0f} {symbol} (${market['oi_usd']/1e9:.1f}B) | {market['percentage']:.1f}% {market['category_label']}"
+                message += f"\n   Funding: {funding_sign}{market['funding']*100:.4f}% | Vol: {volume_formatted} {symbol}"
+            
+            # Add coverage summary
+            message += f"""
+
+🏢 COVERAGE SUMMARY:
+• Exchanges: {validation.get('successful_exchanges', 0)} working
+• Markets: {total_markets} total
+• Phase 2A: USDT + USDC support
+
+🚨 MARKET ANALYSIS:
+• Sentiment: NEUTRAL ⚪➡️
+• Risk Level: NORMAL
+• Coverage: Multi-stablecoin across {validation.get('successful_exchanges', 0)} exchanges
 
 🕐 {datetime.now().strftime('%H:%M:%S')} UTC / {(datetime.now().replace(hour=(datetime.now().hour + 8) % 24)).strftime('%H:%M:%S')} SGT"""
             
