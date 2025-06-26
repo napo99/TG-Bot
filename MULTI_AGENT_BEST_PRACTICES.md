@@ -216,5 +216,38 @@ Before deploying agents in future sessions:
 - [ ] Expected vs actual behavior documented
 - [ ] User validation plan defined
 - [ ] Cleanup strategy for investigation artifacts planned
+- [ ] **Docker environment confirmed** (never assume local Python execution)
 
 **Remember: The goal is efficient problem-solving, not agent creation for its own sake.**
+
+### ⚠️ **CRITICAL: DOCKER-FIRST DEVELOPMENT**
+
+**NEVER FORGET**: This system ALWAYS uses Docker containers in production.
+
+**Common Failure Pattern**:
+- ❌ Agent tests localhost:8001 (works)
+- ❌ User tests TG bot (fails - needs crypto-market-data:8001)
+- ❌ SSL connection errors in production
+
+**Prevention**:
+```markdown
+✅ ALWAYS verify Docker containers are running (docker ps)
+✅ ALWAYS test inter-container networking
+✅ ALWAYS use docker-compose for deployment
+✅ NEVER assume local Python execution works in production
+```
+
+**Docker Commands**:
+```bash
+# Stop everything
+docker-compose down
+
+# Rebuild and deploy
+docker-compose build --no-cache
+docker-compose up -d
+
+# Validate
+docker ps
+docker logs crypto-telegram-bot
+docker logs crypto-market-data
+```
