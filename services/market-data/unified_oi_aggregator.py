@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-UNIFIED OI AGGREGATOR: Complete 13-market system aggregation
-Combines all 5 exchanges with external validation and target spec formatting
+UNIFIED OI AGGREGATOR: Complete market system aggregation
+Combines all 6 exchanges with external validation and target spec formatting
 """
 
 import asyncio
@@ -17,6 +17,7 @@ from bybit_oi_provider import BybitOIProvider
 from okx_oi_provider import OKXOIProvider
 from gateio_oi_provider_working import GateIOOIProviderWorking
 from bitget_oi_provider_working import BitgetOIProviderWorking
+from hyperliquid_oi_provider import HyperliquidOIProvider
 
 from oi_engine_v2 import ExchangeOIResult, MarketType
 
@@ -41,8 +42,8 @@ class UnifiedOIResponse:
 
 class UnifiedOIAggregator:
     """
-    Unified OI Aggregator for complete 13-market system
-    Aggregates data from all 5 exchanges with validation
+    Unified OI Aggregator for complete market system
+    Aggregates data from all 6 exchanges with validation
     """
     
     def __init__(self):
@@ -52,10 +53,11 @@ class UnifiedOIAggregator:
             'bybit': BybitOIProvider(), 
             'okx': OKXOIProvider(),
             'gateio': GateIOOIProviderWorking(),
-            'bitget': BitgetOIProviderWorking()
+            'bitget': BitgetOIProviderWorking(),
+            'hyperliquid': HyperliquidOIProvider()
         }
         
-        self.exchange_priority = ['binance', 'bybit', 'okx', 'gateio', 'bitget']
+        self.exchange_priority = ['binance', 'bybit', 'okx', 'gateio', 'bitget', 'hyperliquid']
     
     async def get_unified_oi_data(self, base_symbol: str) -> UnifiedOIResponse:
         """Get unified OI data from all exchanges"""
@@ -150,7 +152,7 @@ class UnifiedOIAggregator:
             "successful_exchanges": len(successful_exchanges),
             "failed_exchanges": len(failed_exchanges), 
             "total_markets": sum(len(result.markets) for result in successful_exchanges.values()),
-            "validation_passed": len(successful_exchanges) >= 3,  # At least 3 exchanges working
+            "validation_passed": len(successful_exchanges) >= 4,  # At least 4 exchanges working
             "failed_details": failed_exchanges
         }
         
@@ -222,8 +224,8 @@ class UnifiedOIAggregator:
 
 # Testing and validation function
 async def test_unified_system():
-    """Test the complete unified 13-market system"""
-    print("🚀 Testing UNIFIED 13-Market OI System")
+    """Test the complete unified market system with 6 exchanges"""
+    print("🚀 Testing UNIFIED 6-Exchange OI System")
     print("=" * 60)
     
     aggregator = UnifiedOIAggregator()
@@ -235,7 +237,7 @@ async def test_unified_system():
         print(f"Base Symbol: {result.base_symbol}")
         print(f"Total Markets: {result.total_markets}")
         print(f"Total OI: {result.aggregated_oi['total_tokens']:,.0f} BTC (${result.aggregated_oi['total_usd']/1e9:.1f}B)")
-        print(f"Successful Exchanges: {result.validation_summary['successful_exchanges']}/5")
+        print(f"Successful Exchanges: {result.validation_summary['successful_exchanges']}/6")
         
         print(f"\n📈 EXCHANGE BREAKDOWN:")
         for exchange_data in result.exchange_breakdown:
@@ -268,7 +270,7 @@ async def test_unified_system():
         print(f"\n✅ VALIDATION SUMMARY:")
         validation = result.validation_summary
         print(f"  Status: {'✅ PASSED' if validation['validation_passed'] else '❌ FAILED'}")
-        print(f"  Working: {validation['successful_exchanges']}/5 exchanges")
+        print(f"  Working: {validation['successful_exchanges']}/6 exchanges")
         print(f"  Total Markets: {validation['total_markets']}")
         
         if validation['failed_details']:
