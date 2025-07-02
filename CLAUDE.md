@@ -23,6 +23,19 @@ Advanced cryptocurrency market analysis platform with institutional-grade featur
 
 ## Tech Stack & Deployment
 
+### ✅ LATEST: Universal Journaling Snippets with Enhanced Date Format
+- **19+ Shortcuts Implemented**: Date/time, journal templates, writing productivity helpers
+- **Enhanced Date Format**: Day abbreviation + date (Wed | 02-07-2025 - 14:30)
+- **Cross-Terminal Compatibility**: Works in iTerm2, WezTerm, all terminal environments
+- **Conflict-Free Design**: Intuitive shortcuts with `<leader>d*`, `<leader>j*`, `<leader>w*` prefixes
+- **Real-Time Data**: All dates/times use system clock (not hardcoded)
+
+### ✅ Previous: Universal Indent Toggle Fix
+- **Cross-Terminal Compatibility**: `<leader>ti` now works in both iTerm2 and WezTerm
+- **Issue Resolved**: Moved keymap outside terminal-specific conditional block
+- **Universal Functionality**: Indent guides toggle available in all terminal environments
+- **Validation Tested**: Confirmed working across multiple terminals and file types
+
 ### ⚠️ CRITICAL: Always Use Docker
 - **Production Environment**: Docker containers with docker-compose
 - **Service Communication**: Inter-container networking (crypto-market-data:8001)
@@ -183,6 +196,8 @@ python3 test_new_features.py
 - `/cvd ETH-USDT 1h` - CVD analysis
 
 ## Recent Commits
+- **Latest** - 📝 Universal Journaling Snippets with Enhanced Date Format (19+ shortcuts)
+- `e1de515` - 🔧 Fix indent toggle universal compatibility: iTerm2 + WezTerm support
 - `6c594b7` - Enhanced Market Analysis: Net Longs/Shorts & Point-in-Time Delta
 - `299fff0` - Project Status Save: Phase 1 Complete & Live on GitHub
 
