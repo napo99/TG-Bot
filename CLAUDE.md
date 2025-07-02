@@ -93,6 +93,15 @@ class LongShortData:
     token_price: float
     total_oi_tokens: float
     # ... USD value fields
+
+@dataclass
+class UnifiedOIResponse:
+    base_symbol: str
+    total_markets: int
+    aggregated_oi: Dict[str, Any]
+    exchange_breakdown: List[Dict[str, Any]]
+    validation_summary: Dict[str, Any]
+    total_oi_usd: float
 ```
 
 ### Enhanced CVD Analysis
@@ -117,11 +126,25 @@ class CVDData:
 }
 ```
 
+### Multi-Exchange OI Analysis
+`POST /multi_oi`
+```json
+{
+  "symbol": "BTC-USDT"
+}
+```
+
+### Additional Endpoints
+- `POST /test_exchange_oi` - Individual exchange OI validation
+- `POST /volume_scan` - Cross-exchange volume spike detection
+- `POST /debug_tickers` - Exchange ticker debugging
+
 **Enhanced Response includes:**
 - Price data with funding rates
 - Volume analysis with token amounts
 - CVD analysis with point-in-time delta
 - Long/short position breakdown (institutional vs retail)
+- **6-Exchange OI Aggregation**: Complete market coverage
 - Technical indicators
 - Market sentiment analysis
 
@@ -154,15 +177,23 @@ class CVDData:
 - **Volume Spike Detection**: NORMAL/MODERATE/HIGH/EXTREME classification
 - **CVD Analysis**: Cumulative volume delta with divergence detection
 - **Long/Short Ratios**: Institutional vs retail position tracking
+- **6-Exchange OI Aggregation**: Complete market coverage including DEX
+- **Validation Framework**: Mathematical verification across providers
+- **Exchange Rankings**: Dynamic market share analysis
+- **Cross-Exchange Arbitrage**: Price/OI discrepancy detection
 - **Technical Indicators**: RSI, VWAP, ATR, Bollinger Bands
 - **Market Sentiment**: Bulls/Bears/Neutral control analysis
 
-### Data Sources
-- **Binance**: Spot and futures price data, open interest
-- **Binance Futures API**: Long/short position ratios
+### Data Sources (6 Exchanges)
+- **Binance**: Spot and futures price data, open interest, long/short ratios
   - `topLongShortPositionRatio` (institutional)
   - `globalLongShortAccountRatio` (retail)
-- **Real-time Processing**: Concurrent data fetching for performance
+- **Bybit**: USDT/USDC perpetuals, advanced OI metrics
+- **OKX**: Swap contracts, institutional-grade OI data
+- **Gate.io**: Perpetual futures, cross-margined contracts
+- **Bitget**: UMCBL/DMCBL contracts, comprehensive OI tracking
+- **Hyperliquid**: DEX integration (decentralized), unique on-chain data
+- **Real-time Processing**: Concurrent data fetching across all exchanges
 
 ### Display Format
 - **Token-First**: Native asset amounts prominently displayed
