@@ -1,0 +1,51 @@
+app = "crypto-assistant-prod"
+primary_region = "iad"  # US East (Virginia) - close to exchanges
+
+[build]
+  dockerfile = "fly.Dockerfile"
+
+[env]
+  LOG_LEVEL = "INFO"
+  MARKET_DATA_URL = "http://localhost:8001"
+  DATABASE_URL = "sqlite:///data/crypto_assistant.db"
+  REDIS_URL = "redis://localhost:6379"
+  BINANCE_TESTNET = "false"
+  BYBIT_TESTNET = "false"
+
+[experimental]
+  auto_rollback = true
+
+[[services]]
+  internal_port = 8001
+  protocol = "tcp"
+  
+  [services.concurrency]
+    hard_limit = 25
+    soft_limit = 20
+    type = "connections"
+
+  [[services.ports]]
+    force_https = true
+    handlers = ["http"]
+    port = 80
+
+  [[services.ports]]
+    handlers = ["tls", "http"]
+    port = 443
+
+  [services.tcp_checks]
+    grace_period = "10s"
+    interval = "15s"
+    restart_limit = 0
+    timeout = "2s"
+
+[checks]
+  [checks.market_data_health]
+    grace_period = "30s"
+    interval = "15s"
+    method = "get"
+    path = "/health"
+    port = 8001
+    protocol = "http"
+    restart_limit = 0
+    timeout = "10s"
