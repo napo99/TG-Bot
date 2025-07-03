@@ -17,11 +17,11 @@
 - [x] Commit Phase 2 changes
 
 ### **Phase 3: Local Testing**
-- [ ] Test dev environment locally
-- [ ] Verify both .env and dev.env work
-- [ ] Create dev bot with @BotFather
-- [ ] Test dev bot functionality
-- [ ] Commit Phase 3 verification
+- [x] Test dev environment locally
+- [x] Verify both .env and dev.env work
+- [x] Create dev bot with @BotFather
+- [x] Test dev bot functionality
+- [x] Commit Phase 3 verification
 
 ### **Phase 4: Cloud Deployment**
 - [ ] Install flyctl CLI
