@@ -3,6 +3,9 @@
 .env.local
 .env.production
 .env.development
+*.env
+dev.env
+prod.env
 
 # API Keys and sensitive data
 config/secrets/
