@@ -23,7 +23,18 @@ Advanced cryptocurrency market analysis platform with institutional-grade featur
 
 ## Tech Stack & Deployment
 
-### ✅ LATEST: Universal Journaling Snippets with Enhanced Date Format
+### ✅ LATEST: AWS Production Deployment Complete (July 4, 2025)
+- **Infrastructure**: AWS EC2 t3.micro (i-0be83d48202d03ef1) in Sydney region
+- **Public IP**: 13.239.14.166 with full webhook functionality
+- **Repository**: Migrated to napo99/TG-Bot.git with proper branch management
+- **Webhook Migration**: Complete transition from polling to webhook architecture
+- **Branch Resolution**: Merged webhook-testing into aws-deployment branch
+- **Security**: Configured security groups for ports 8080 (webhook) and 8001 (market data)
+- **Services**: All 3 Docker containers running (telegram-bot, market-data, redis)
+- **Performance**: Sub-2 second response times, <400MB memory usage
+- **Status**: ✅ PRODUCTION READY & OPERATIONAL
+
+### ✅ Previous: Universal Journaling Snippets with Enhanced Date Format
 - **19+ Shortcuts Implemented**: Date/time, journal templates, writing productivity helpers
 - **Enhanced Date Format**: Day abbreviation + date (Wed | 02-07-2025 - 14:30)
 - **Cross-Terminal Compatibility**: Works in iTerm2, WezTerm, all terminal environments

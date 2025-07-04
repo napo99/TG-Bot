@@ -4,7 +4,7 @@ services:
   telegram-bot:
     build:
       context: ./services/telegram-bot
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.aws
     ports:
       - "8080:5000"
     environment:
