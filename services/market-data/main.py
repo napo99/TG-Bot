@@ -171,6 +171,13 @@ class PriceData:
     change_24h: Optional[float] = None
     market_type: str = "spot"  # "spot" or "perp"
     market_cap: Optional[float] = None  # Real market cap from CoinGecko
+    # Enhanced 15m data
+    volume_15m: Optional[float] = None
+    change_15m: Optional[float] = None
+    delta_24h: Optional[float] = None
+    delta_15m: Optional[float] = None
+    atr_24h: Optional[float] = None
+    atr_15m: Optional[float] = None
 
 @dataclass
 class PerpData:
@@ -183,6 +190,13 @@ class PerpData:
     funding_rate: Optional[float] = None
     funding_rate_change: Optional[float] = None
     market_cap: Optional[float] = None  # Real market cap from CoinGecko
+    # Enhanced 15m data
+    volume_15m: Optional[float] = None
+    change_15m: Optional[float] = None
+    delta_24h: Optional[float] = None
+    delta_15m: Optional[float] = None
+    atr_24h: Optional[float] = None
+    atr_15m: Optional[float] = None
 
 @dataclass
 class CombinedPriceData:
@@ -349,7 +363,7 @@ class ExchangeManager:
             raise
     
     async def get_combined_price(self, base_symbol: str, exchange: str = None) -> CombinedPriceData:
-        """Get both spot and perpetual prices for a symbol"""
+        """Get both spot and perpetual prices for a symbol with enhanced 15m data"""
         try:
             if exchange is None:
                 exchange = next(iter(self.exchanges.keys()))
@@ -360,23 +374,36 @@ class ExchangeManager:
             ex = self.exchanges[exchange]
             base_symbol = base_symbol.upper().replace('-', '/')
             
-            # Try to get spot price
+            # Try to get spot price with enhanced data
             spot_data = None
             try:
                 spot_symbol = f"{base_symbol}"
                 ticker = await ex.fetch_ticker(spot_symbol)
+                
+                # Get 15m candles for enhanced calculations
+                candles_15m = await self._fetch_15m_data(ex, spot_symbol)
+                volume_15m, change_15m, delta_24h, delta_15m, atr_24h, atr_15m = await self._calculate_enhanced_metrics(
+                    candles_15m, ticker.get('baseVolume', 0)
+                )
+                
                 spot_data = PriceData(
                     symbol=spot_symbol,
                     price=ticker['last'],
                     timestamp=datetime.now(),
                     volume_24h=ticker.get('baseVolume'),
                     change_24h=ticker.get('percentage'),
-                    market_type="spot"
+                    market_type="spot",
+                    volume_15m=volume_15m,
+                    change_15m=change_15m,
+                    delta_24h=delta_24h,
+                    delta_15m=delta_15m,
+                    atr_24h=atr_24h,
+                    atr_15m=atr_15m
                 )
             except Exception as e:
                 logger.warning(f"Could not fetch spot data for {base_symbol}: {e}")
             
-            # Try to get perp price with OI and funding
+            # Try to get perp price with OI and funding and enhanced data
             perp_data = None
             try:
                 # Use futures exchange for perp data
@@ -395,18 +422,23 @@ class ExchangeManager:
                             try:
                                 funding_info = await futures_ex.fetch_funding_rate(perp_symbol)
                                 funding_rate = funding_info.get('fundingRate')
-                                # Calculate funding rate change (simplified)
                                 funding_change = 0.0  # Would need historical data for accurate calculation
                             except Exception:
                                 pass
                             
-                            # Try to get open interest
+                            # Try to get open interest (current)
                             open_interest = None
                             try:
                                 oi_info = await futures_ex.fetch_open_interest(perp_symbol)
                                 open_interest = oi_info.get('openInterestAmount')
                             except Exception:
                                 pass
+                            
+                            # Get 15m candles for enhanced calculations
+                            candles_15m = await self._fetch_15m_data(futures_ex, perp_symbol)
+                            volume_15m, change_15m, delta_24h, delta_15m, atr_24h, atr_15m = await self._calculate_enhanced_metrics(
+                                candles_15m, ticker.get('baseVolume', 0)
+                            )
                             
                             perp_data = PerpData(
                                 symbol=perp_symbol,
@@ -416,7 +448,13 @@ class ExchangeManager:
                                 change_24h=ticker.get('percentage'),
                                 open_interest=open_interest,
                                 funding_rate=funding_rate,
-                                funding_rate_change=funding_change
+                                funding_rate_change=funding_change,
+                                volume_15m=volume_15m,
+                                change_15m=change_15m,
+                                delta_24h=delta_24h,
+                                delta_15m=delta_15m,
+                                atr_24h=atr_24h,
+                                atr_15m=atr_15m
                             )
                             break
                         except Exception:
@@ -435,6 +473,116 @@ class ExchangeManager:
         except Exception as e:
             logger.error(f"Error fetching combined price for {base_symbol}: {e}")
             raise
+    
+    async def _fetch_15m_data(self, exchange, symbol: str):
+        """Fetch 15-minute OHLCV data for enhanced calculations"""
+        try:
+            # Fetch last 100 periods (25 hours of 15m data) for calculations
+            candles = await exchange.fetch_ohlcv(symbol, '15m', limit=100)
+            return candles
+        except Exception as e:
+            logger.warning(f"Could not fetch 15m data for {symbol}: {e}")
+            return []
+    
+    async def _calculate_enhanced_metrics(self, candles_15m: list, volume_24h: float):
+        """Calculate enhanced metrics from 15m candlestick data"""
+        try:
+            if not candles_15m or len(candles_15m) < 2:
+                return None, None, None, None, None, None
+            
+            # Extract data from candles [timestamp, open, high, low, close, volume]
+            latest_candle = candles_15m[-1]
+            previous_candle = candles_15m[-2] if len(candles_15m) > 1 else latest_candle
+            
+            # 15m volume (latest candle volume)
+            volume_15m = latest_candle[5] if len(latest_candle) > 5 else 0
+            
+            # 15m price change
+            if len(candles_15m) > 1:
+                current_price = latest_candle[4]  # Close price
+                previous_price = previous_candle[4]  # Previous close price
+                change_15m = ((current_price - previous_price) / previous_price) * 100 if previous_price > 0 else 0
+            else:
+                change_15m = 0
+            
+            # Delta calculations (volume-based momentum)
+            delta_24h = await self._calculate_volume_delta(candles_15m, 96)  # 96 * 15m = 24h
+            delta_15m = await self._calculate_volume_delta(candles_15m, 1)   # Last 1 period
+            
+            # ATR calculations (Average True Range)
+            atr_24h = await self._calculate_atr(candles_15m, period=96)  # 24h ATR (96 periods)
+            atr_15m = await self._calculate_atr(candles_15m, period=1)   # 15m ATR (1 period)
+            
+            return volume_15m, change_15m, delta_24h, delta_15m, atr_24h, atr_15m
+            
+        except Exception as e:
+            logger.warning(f"Error calculating enhanced metrics: {e}")
+            return None, None, None, None, None, None
+    
+    async def _calculate_volume_delta(self, candles: list, periods: int):
+        """Calculate volume delta (approximated as volume-weighted price movement)"""
+        try:
+            if not candles or len(candles) < periods:
+                return 0
+            
+            # Take the last 'periods' candles
+            relevant_candles = candles[-periods:]
+            
+            total_delta = 0
+            for candle in relevant_candles:
+                if len(candle) >= 6:
+                    open_price = candle[1]
+                    close_price = candle[4]
+                    volume = candle[5]
+                    
+                    # Approximate delta: if price went up, consider volume as positive delta
+                    # if price went down, consider volume as negative delta
+                    price_direction = 1 if close_price > open_price else -1
+                    candle_delta = volume * price_direction
+                    total_delta += candle_delta
+            
+            return total_delta
+            
+        except Exception as e:
+            logger.warning(f"Error calculating volume delta: {e}")
+            return 0
+    
+    async def _calculate_atr(self, candles: list, period: int = 14):
+        """Calculate Average True Range (ATR)"""
+        try:
+            if not candles or len(candles) < period + 1:
+                return None
+            
+            true_ranges = []
+            
+            # Calculate True Range for each candle
+            for i in range(1, min(len(candles), period + 1)):
+                current = candles[-(i)]
+                previous = candles[-(i+1)]
+                
+                if len(current) >= 5 and len(previous) >= 5:
+                    high = current[2]
+                    low = current[3]
+                    prev_close = previous[4]
+                    
+                    # True Range = max(high-low, high-prev_close, prev_close-low)
+                    tr1 = high - low
+                    tr2 = abs(high - prev_close)
+                    tr3 = abs(prev_close - low)
+                    
+                    true_range = max(tr1, tr2, tr3)
+                    true_ranges.append(true_range)
+            
+            # Calculate ATR as average of true ranges
+            if true_ranges:
+                atr = sum(true_ranges) / len(true_ranges)
+                return atr
+            
+            return None
+            
+        except Exception as e:
+            logger.warning(f"Error calculating ATR: {e}")
+            return None
     
     async def get_top_symbols(self, market_type: str = "spot", limit: int = 10, exchange: str = None) -> list:
         """Get top symbols by volume"""
