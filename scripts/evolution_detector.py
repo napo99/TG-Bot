@@ -165,7 +165,23 @@ class EvolutionDetector:
         return recommendations, metrics
     
     def _check_level_2_readiness(self, metrics):
-        """Check if ready for Level 2"""
+        """Check if ready for Level 2 - MANUAL ONLY for production safety"""
+        # Check if manual_only mode is enabled
+        level_2_config = self.config.get('triggers', {}).get('level_2', {})
+        is_manual_only = level_2_config.get('mode') == 'manual_only'
+        
+        if is_manual_only:
+            return {
+                'ready': False,  # Never auto-ready in manual mode
+                'triggers': [
+                    "🛡️ MANUAL_ONLY mode enabled for production safety",
+                    "Run: ./scripts/setup/upgrade-to-level-2.sh --when-ready",
+                    "Level 2 available but requires explicit user decision"
+                ],
+                'manual_only': True
+            }
+        
+        # Original auto-detection logic (if manual_only disabled)
         triggers = []
         
         if metrics['deployment_frequency'] in ['daily', 'weekly']:
@@ -182,7 +198,8 @@ class EvolutionDetector:
         
         return {
             'ready': len(triggers) >= 1,  # Any trigger is enough
-            'triggers': triggers
+            'triggers': triggers,
+            'manual_only': False
         }
     
     def _check_level_3_readiness(self, metrics):

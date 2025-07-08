@@ -34,10 +34,11 @@ target_level: 2
 triggers:
   level_2:
     conditions:
-    - deployment_frequency == daily
-    - team_size > 1
-    - manual_errors_per_month > 1
-    description: Automation becomes valuable
+    - user_explicitly_requests_automation
+    - local_testing_completed
+    - confident_in_stability
+    description: 'Manual-only: Automation only when user feels ready'
+    mode: manual_only
   level_3:
     conditions:
     - production_traffic > 1000
