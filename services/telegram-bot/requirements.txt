@@ -7,3 +7,4 @@ pydantic>=2.5.0
 loguru>=0.7.0
 flask>=2.3.0
 gunicorn>=21.2.0
+pytz>=2023.3
