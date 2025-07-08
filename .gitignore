@@ -82,4 +82,18 @@ Thumbs.db
 # Backup files
 *.bak
 *.backup
-*.tmp
+*.tmp# Local development and testing
+/.local-tests/
+test_*.py
+*_VALIDATION.md
+*.json
+.bot_pid
+.market_pid
+investigate_*.py
+volume_timeframe_*.py
+btc_*_analysis_*.md
+enhanced_deployment_test.py
+config/local.env
+htmlcov/
+.coverage
+.pytest_cache/

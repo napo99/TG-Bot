@@ -8,6 +8,11 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 from aiohttp import ClientSession, ClientTimeout
 from loguru import logger
 from dotenv import load_dotenv
+from formatting_utils import (
+    format_large_number, format_price, format_percentage, format_volume_with_usd,
+    format_dollar_amount, format_dual_timezone_timestamp, get_change_emoji, format_delta_value,
+    format_funding_rate
+)
 
 load_dotenv()
 
@@ -224,7 +229,7 @@ class TelegramBot:
         await self.start(update, context)
     
     async def price_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Enhanced price command showing both spot and perps"""
+        """Enhanced price command showing both spot and perps with 15m data"""
         if not self._is_authorized(str(update.effective_user.id)):
             await update.message.reply_text("❌ Unauthorized access")
             return
@@ -234,69 +239,111 @@ class TelegramBot:
             return
         
         symbol = context.args[0].upper().replace('/', '-')
-        await update.message.reply_text(f"⏳ Fetching prices for {symbol}...")
+        await update.message.reply_text(f"⏳ Fetching enhanced data for {symbol}...")
         
         result = await self.market_client.get_combined_price(symbol)
         
         if result['success']:
             data = result['data']
             base_symbol = data['base_symbol']
+            base_token = base_symbol.split('/')[0]
             
             message = f"📊 **{base_symbol}**\n\n"
             
-            # Spot data
+            # Spot data with enhanced format
             if 'spot' in data and data['spot']:
                 spot = data['spot']
+                price = spot['price']
                 change_24h = spot.get('change_24h', 0) or 0
-                change_emoji = "🟢" if change_24h >= 0 else "🔴"
-                change_sign = "+" if change_24h >= 0 else ""
+                change_15m = spot.get('change_15m', 0) or 0
                 
-                # Calculate USD volume
-                volume_native = spot.get('volume_24h', 0) or 0
-                volume_usd = volume_native * spot['price']
-                base_token = base_symbol.split('/')[0]
+                # Price row with ATR 24h
+                change_24h_emoji = get_change_emoji(change_24h)
+                dollar_change_24h = (price * change_24h / 100) if change_24h else 0
+                atr_24h_str = f" | ATR: {spot.get('atr_24h', 0):.2f}" if spot.get('atr_24h') else ""
                 
                 message += f"""🏪 **SPOT**
-💰 Price: **${spot['price']:,.4f}**
-{change_emoji} 24h: **{change_sign}{change_24h:.2f}%**
-📊 Volume: **{volume_native:,.0f} {base_token}** (${volume_usd/1e6:.1f}M)
-
+💰 Price: **{format_price(price)}** | {format_percentage(change_24h)} | {format_dollar_amount(dollar_change_24h)}{atr_24h_str}
 """
+                
+                # 15m price change
+                change_15m_emoji = get_change_emoji(change_15m)
+                dollar_change_15m = (price * change_15m / 100) if change_15m else 0
+                atr_15m_str = f" | ATR: {spot.get('atr_15m', 0):.2f}" if spot.get('atr_15m') else ""
+                message += f"{change_15m_emoji} Price Change 15m: **{format_percentage(change_15m)}** | {format_dollar_amount(dollar_change_15m)}{atr_15m_str}\n"
+                
+                # Volume 24h
+                volume_24h = spot.get('volume_24h', 0) or 0
+                message += f"📊 Volume 24h: **{format_volume_with_usd(volume_24h, base_token, price)}**\n"
+                
+                # Volume 15m
+                volume_15m = spot.get('volume_15m', 0) or 0
+                message += f"📊 Volume 15m: **{format_volume_with_usd(volume_15m, base_token, price)}**\n"
+                
+                # Delta 24h
+                delta_24h = spot.get('delta_24h', 0) or 0
+                message += f"📈 Delta 24h: **{format_delta_value(delta_24h, base_token, price)}**\n"
+                
+                # Delta 15m
+                delta_15m = spot.get('delta_15m', 0) or 0
+                message += f"📈 Delta 15m: **{format_delta_value(delta_15m, base_token, price)}**\n\n"
             
-            # Perp data
+            # Perp data with enhanced format
             if 'perp' in data and data['perp']:
                 perp = data['perp']
+                price = perp['price']
                 change_24h = perp.get('change_24h', 0) or 0
-                change_emoji = "🟢" if change_24h >= 0 else "🔴"
-                change_sign = "+" if change_24h >= 0 else ""
+                change_15m = perp.get('change_15m', 0) or 0
                 
-                # Calculate USD volume for perps
-                volume_native = perp.get('volume_24h', 0) or 0
-                volume_usd = volume_native * perp['price']
-                base_token = base_symbol.split('/')[0]
+                # Price row with ATR 24h
+                change_24h_emoji = get_change_emoji(change_24h)
+                dollar_change_24h = (price * change_24h / 100) if change_24h else 0
+                atr_24h_str = f" | ATR: {perp.get('atr_24h', 0):.2f}" if perp.get('atr_24h') else ""
                 
                 message += f"""⚡ **PERPETUALS**
-💰 Price: **${perp['price']:,.4f}**
-{change_emoji} 24h: **{change_sign}{change_24h:.2f}%**
-📊 Volume: **{volume_native:,.0f} {base_token}** (${volume_usd/1e6:.1f}M)"""
+💰 Price: **{format_price(price)}** | {format_percentage(change_24h)} | {format_dollar_amount(dollar_change_24h)}{atr_24h_str}
+"""
                 
-                # Add OI and funding rate if available
+                # 15m price change
+                change_15m_emoji = get_change_emoji(change_15m)
+                dollar_change_15m = (price * change_15m / 100) if change_15m else 0
+                atr_15m_str = f" | ATR: {perp.get('atr_15m', 0):.2f}" if perp.get('atr_15m') else ""
+                message += f"{change_15m_emoji} Price Change 15m: **{format_percentage(change_15m)}** | {format_dollar_amount(dollar_change_15m)}{atr_15m_str}\n"
+                
+                # Volume 24h
+                volume_24h = perp.get('volume_24h', 0) or 0
+                message += f"📊 Volume 24h: **{format_volume_with_usd(volume_24h, base_token, price)}**\n"
+                
+                # Volume 15m
+                volume_15m = perp.get('volume_15m', 0) or 0
+                message += f"📊 Volume 15m: **{format_volume_with_usd(volume_15m, base_token, price)}**\n"
+                
+                # Delta 24h
+                delta_24h = perp.get('delta_24h', 0) or 0
+                message += f"📈 Delta 24h: **{format_delta_value(delta_24h, base_token, price)}**\n"
+                
+                # Delta 15m
+                delta_15m = perp.get('delta_15m', 0) or 0
+                message += f"📈 Delta 15m: **{format_delta_value(delta_15m, base_token, price)}**\n"
+                
+                # Open Interest
                 if perp.get('open_interest'):
-                    oi_usd = perp['open_interest'] * perp['price']
-                    message += f"\n📈 OI: **{perp['open_interest']:,.0f} {base_token}** (${oi_usd/1e6:.0f}M)"
+                    oi_volume = format_volume_with_usd(perp['open_interest'], base_token, price)
+                    message += f"📈 OI 24h: **{oi_volume}**\n"
                 
+                # Funding Rate
                 if perp.get('funding_rate') is not None:
-                    funding_rate = perp['funding_rate'] * 100  # Convert to percentage
-                    funding_emoji = "🟢" if funding_rate >= 0 else "🔴"
-                    funding_sign = "+" if funding_rate >= 0 else ""
-                    message += f"\n💸 Funding: **{funding_sign}{funding_rate:.4f}%**"
+                    funding_rate = perp['funding_rate']
+                    message += f"💸 Funding: **{format_funding_rate(funding_rate)}**\n"
                 
                 message += "\n"
             
             if 'spot' not in data and 'perp' not in data:
-                message += "❌ No data available for this symbol"
+                message += "❌ No data available for this symbol\n"
             
-            message += f"\n🕐 Updated: {datetime.now().strftime('%H:%M:%S')}"
+            # Enhanced timestamp with dual timezone
+            timestamp = format_dual_timezone_timestamp()
+            message += f"🕐 {timestamp}"
             
             await update.message.reply_text(message, parse_mode='Markdown')
         else:
