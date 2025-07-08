@@ -1,0 +1,108 @@
+name: 🔍 Code Quality Pipeline
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+jobs:
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐍 Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: 📦 Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 black isort bandit safety
+        pip install -r services/telegram-bot/requirements.txt
+        pip install -r services/market-data/requirements.txt
+        
+    - name: 🎨 Check code formatting (Black)
+      run: |
+        black --check --diff services/
+        
+    - name: 📏 Check import sorting (isort)
+      run: |
+        isort --check-only --diff services/
+        
+    - name: 🔍 Lint with flake8
+      run: |
+        flake8 services/ --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 services/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+        
+    - name: 🔒 Security scan (Bandit)
+      run: |
+        bandit -r services/ -f json -o bandit-report.json || true
+        bandit -r services/ -ll
+        
+    - name: 🛡️ Dependency vulnerability check
+      run: |
+        safety check --json --output safety-report.json || true
+        safety check
+        
+    - name: 📊 Upload security reports
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: security-reports
+        path: |
+          bandit-report.json
+          safety-report.json
+        retention-days: 30
+
+  docker-validation:
+    name: Docker Build Validation
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐳 Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: 🔨 Build Telegram Bot
+      run: |
+        cd services/telegram-bot
+        docker build --tag crypto-telegram-bot:test .
+        
+    - name: 🔨 Build Market Data Service
+      run: |
+        cd services/market-data  
+        docker build --tag crypto-market-data:test .
+        
+    - name: ✅ Validate Docker Compose
+      run: |
+        docker-compose config --quiet
+
+  documentation:
+    name: Documentation Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 📚 Check README exists
+      run: |
+        test -f README.md || (echo "README.md is missing" && exit 1)
+        
+    - name: 📋 Check CLAUDE.md documentation
+      run: |
+        test -f CLAUDE.md || (echo "CLAUDE.md documentation is missing" && exit 1)
+        
+    - name: 📝 Validate Markdown syntax
+      uses: DavidAnson/markdownlint-action@v1
+      with:
+        files: '**/*.md'
+        ignore: '.local-tests/'

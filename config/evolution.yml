@@ -1,0 +1,52 @@
+current_level: 1
+features:
+  advanced_analytics: false
+  automated_rollback: false
+  basic_unit_tests: true
+  blue_green_deployment: false
+  canary_releases: false
+  code_quality_checks: true
+  health_endpoints: true
+  integration_tests: false
+  monitoring_dashboards: false
+  performance_testing: false
+  security_scanning: false
+  staging_deployment: false
+metrics:
+  deployment_frequency: daily
+  last_updated: '2025-07-08'
+  manual_errors: 2
+  manual_errors_per_month: 0
+  production_traffic: 0
+  service_count: 2
+  team_size: 1
+  test_coverage: 2.127659574468085
+  uptime_requirement: 95.0
+project_stage: development
+roadmap:
+  current_focus: Implement basic health endpoints and unit tests
+  estimated_timeline:
+    level_2: 2-3 weeks
+    level_3: 2-3 months
+    level_4: 6-12 months
+  next_milestone: Set up staging environment when deployment frequency increases
+target_level: 2
+triggers:
+  level_2:
+    conditions:
+    - deployment_frequency == daily
+    - team_size > 1
+    - manual_errors_per_month > 1
+    description: Automation becomes valuable
+  level_3:
+    conditions:
+    - production_traffic > 1000
+    - uptime_requirement > 99.0
+    - team_size > 3
+    description: Professional monitoring needed
+  level_4:
+    conditions:
+    - production_traffic > 10000
+    - uptime_requirement > 99.9
+    - multiple_services == true
+    description: Enterprise-grade required
