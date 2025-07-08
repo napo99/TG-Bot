@@ -385,6 +385,7 @@ class ExchangeManager:
                 volume_15m, change_15m, delta_24h, delta_15m, atr_24h, atr_15m = await self._calculate_enhanced_metrics(
                     candles_15m, ticker.get('baseVolume', 0)
                 )
+                logger.info(f"✅ Enhanced spot metrics: vol_15m={volume_15m}, change_15m={change_15m}")
                 
                 spot_data = PriceData(
                     symbol=spot_symbol,
@@ -439,6 +440,7 @@ class ExchangeManager:
                             volume_15m, change_15m, delta_24h, delta_15m, atr_24h, atr_15m = await self._calculate_enhanced_metrics(
                                 candles_15m, ticker.get('baseVolume', 0)
                             )
+                            logger.info(f"✅ Enhanced perp metrics: vol_15m={volume_15m}, change_15m={change_15m}")
                             
                             perp_data = PerpData(
                                 symbol=perp_symbol,
@@ -478,7 +480,9 @@ class ExchangeManager:
         """Fetch 15-minute OHLCV data for enhanced calculations"""
         try:
             # Fetch last 100 periods (25 hours of 15m data) for calculations
+            # Note: Using ccxt.pro so fetch_ohlcv is async
             candles = await exchange.fetch_ohlcv(symbol, '15m', limit=100)
+            logger.info(f"✅ Fetched {len(candles)} 15m candles for {symbol}")
             return candles
         except Exception as e:
             logger.warning(f"Could not fetch 15m data for {symbol}: {e}")
@@ -793,7 +797,13 @@ class MarketDataService:
                     'price': combined_data.spot.price,
                     'volume_24h': combined_data.spot.volume_24h,
                     'change_24h': combined_data.spot.change_24h,
-                    'market_type': 'spot'
+                    'market_type': 'spot',
+                    'volume_15m': getattr(combined_data.spot, 'volume_15m', None),
+                    'change_15m': getattr(combined_data.spot, 'change_15m', None),
+                    'delta_24h': getattr(combined_data.spot, 'delta_24h', None),
+                    'delta_15m': getattr(combined_data.spot, 'delta_15m', None),
+                    'atr_24h': getattr(combined_data.spot, 'atr_24h', None),
+                    'atr_15m': getattr(combined_data.spot, 'atr_15m', None)
                 }
             
             if combined_data.perp:
@@ -805,7 +815,13 @@ class MarketDataService:
                     'open_interest': combined_data.perp.open_interest,
                     'funding_rate': combined_data.perp.funding_rate,
                     'funding_rate_change': combined_data.perp.funding_rate_change,
-                    'market_type': 'perp'
+                    'market_type': 'perp',
+                    'volume_15m': getattr(combined_data.perp, 'volume_15m', None),
+                    'change_15m': getattr(combined_data.perp, 'change_15m', None),
+                    'delta_24h': getattr(combined_data.perp, 'delta_24h', None),
+                    'delta_15m': getattr(combined_data.perp, 'delta_15m', None),
+                    'atr_24h': getattr(combined_data.perp, 'atr_24h', None),
+                    'atr_15m': getattr(combined_data.perp, 'atr_15m', None)
                 }
             
             return {

@@ -54,7 +54,7 @@ def format_large_number(value: Union[int, float, None], decimals: int = 2) -> st
         
         # Less than 1000
         else:
-            return f"{sign}{value:.{decimals}f}"
+            return f"{sign}{abs_value:.{decimals}f}"
     except (ValueError, TypeError):
         return "N/A"
 
@@ -100,6 +100,28 @@ def format_percentage(percentage: Union[float, None], decimals: int = 2, show_si
             return f"{sign}{percentage:.{decimals}f}%"
         else:
             return f"{percentage:.{decimals}f}%"
+    except (ValueError, TypeError):
+        return "N/A%"
+
+
+def format_funding_rate(funding_rate: Union[float, None]) -> str:
+    """
+    Format funding rate with appropriate precision for small values.
+    
+    Args:
+        funding_rate: Funding rate value (can be None)
+    
+    Returns:
+        Formatted funding rate string with 4 decimal places
+    """
+    if funding_rate is None:
+        return "N/A%"
+    
+    try:
+        funding_rate = float(funding_rate)
+        percentage = funding_rate * 100
+        sign = "+" if percentage >= 0 else ""
+        return f"{sign}{percentage:.4f}%"
     except (ValueError, TypeError):
         return "N/A%"
 

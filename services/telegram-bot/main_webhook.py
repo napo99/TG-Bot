@@ -14,7 +14,8 @@ import queue
 from queue import Queue
 from formatting_utils import (
     format_large_number, format_price, format_percentage, format_volume_with_usd,
-    format_dollar_amount, format_dual_timezone_timestamp, get_change_emoji, format_delta_value
+    format_dollar_amount, format_dual_timezone_timestamp, get_change_emoji, format_delta_value,
+    format_funding_rate
 )
 
 load_dotenv()
@@ -334,10 +335,9 @@ class TelegramBot:
                     oi_volume = format_volume_with_usd(perp['open_interest'], base_token, price)
                     message += f"📈 OI 24h: **{oi_volume}**\n"
                 
-                # Funding Rate
+                # Funding Rate (8h intervals on Binance)
                 if perp.get('funding_rate') is not None:
-                    funding_rate = perp['funding_rate'] * 100
-                    message += f"💸 Funding: **{format_percentage(funding_rate)}**\n"
+                    message += f"💸 Funding (8h): **{format_funding_rate(perp['funding_rate'])}**\n"
                 
                 message += "\n"
             
