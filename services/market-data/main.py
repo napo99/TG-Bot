@@ -383,7 +383,7 @@ class ExchangeManager:
                 # Get 15m candles for enhanced calculations
                 candles_15m = await self._fetch_15m_data(ex, spot_symbol)
                 volume_15m, change_15m, delta_24h, delta_15m, atr_24h, atr_15m = await self._calculate_enhanced_metrics(
-                    candles_15m, ticker.get('baseVolume', 0)
+                    candles_15m, ticker.get('baseVolume', 0), ex, spot_symbol
                 )
                 logger.info(f"✅ Enhanced spot metrics: vol_15m={volume_15m}, change_15m={change_15m}")
                 
@@ -438,7 +438,7 @@ class ExchangeManager:
                             # Get 15m candles for enhanced calculations
                             candles_15m = await self._fetch_15m_data(futures_ex, perp_symbol)
                             volume_15m, change_15m, delta_24h, delta_15m, atr_24h, atr_15m = await self._calculate_enhanced_metrics(
-                                candles_15m, ticker.get('baseVolume', 0)
+                                candles_15m, ticker.get('baseVolume', 0), ex, perp_symbol
                             )
                             logger.info(f"✅ Enhanced perp metrics: vol_15m={volume_15m}, change_15m={change_15m}")
                             
@@ -488,7 +488,7 @@ class ExchangeManager:
             logger.warning(f"Could not fetch 15m data for {symbol}: {e}")
             return []
     
-    async def _calculate_enhanced_metrics(self, candles_15m: list, volume_24h: float):
+    async def _calculate_enhanced_metrics(self, candles_15m: list, volume_24h: float, exchange, symbol: str):
         """Calculate enhanced metrics from 15m candlestick data"""
         try:
             if not candles_15m or len(candles_15m) < 2:
@@ -514,8 +514,10 @@ class ExchangeManager:
             delta_15m = await self._calculate_volume_delta(candles_15m, 1)   # Last 1 period
             
             # ATR calculations (Average True Range)
-            atr_24h = await self._calculate_atr(candles_15m, period=96)  # 24h ATR (96 periods)
-            atr_15m = await self._calculate_atr(candles_15m, period=1)   # 15m ATR (1 period)
+            # ATR 24h: Use 6 periods of 4h data for recent daily volatility
+            atr_24h = await self._calculate_atr_24h(exchange, symbol)
+            # ATR 15m: Use 7 periods of 15m data for current session volatility
+            atr_15m = await self._calculate_atr(candles_15m, period=7)
             
             return volume_15m, change_15m, delta_24h, delta_15m, atr_24h, atr_15m
             
@@ -550,6 +552,21 @@ class ExchangeManager:
         except Exception as e:
             logger.warning(f"Error calculating volume delta: {e}")
             return 0
+    
+    async def _calculate_atr_24h(self, exchange, symbol):
+        """Calculate 24h ATR using 6 periods of 4h data for recent daily volatility"""
+        try:
+            # Fetch 4-hour candlestick data (last 10 periods for buffer)
+            candles_4h = await exchange.fetch_ohlcv(symbol, '4h', limit=10)
+            if not candles_4h or len(candles_4h) < 7:  # Need at least 7 for 6 periods
+                logger.warning(f"Insufficient 4h data for ATR calculation: {len(candles_4h) if candles_4h else 0} candles")
+                return None
+            
+            return await self._calculate_atr(candles_4h, period=6)
+            
+        except Exception as e:
+            logger.warning(f"Error calculating 24h ATR: {e}")
+            return None
     
     async def _calculate_atr(self, candles: list, period: int = 14):
         """Calculate Average True Range (ATR)"""
