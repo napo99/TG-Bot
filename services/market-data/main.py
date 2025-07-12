@@ -490,13 +490,30 @@ class ExchangeManager:
             except Exception as e:
                 logger.warning(f"Could not fetch perp data for {base_symbol}: {e}")
             
+            # Get actual exchange names dynamically
+            spot_exchange_name = exchange.title() if spot_data else "Unknown"
+            
+            # Determine perp exchange name based on which futures exchange was used
+            perp_exchange_name = "Unknown"
+            if perp_data:
+                # Check which futures exchange we used
+                if 'binance_futures' in self.exchanges:
+                    perp_exchange_name = "Binance"
+                elif 'bybit_futures' in self.exchanges:
+                    perp_exchange_name = "Bybit"
+                elif 'okx_futures' in self.exchanges:
+                    perp_exchange_name = "OKX"
+                else:
+                    # Fallback to the base exchange name
+                    perp_exchange_name = exchange.title()
+            
             return CombinedPriceData(
                 base_symbol=base_symbol,
                 spot=spot_data,
                 perp=perp_data,
                 timestamp=datetime.now(),
-                spot_exchange="Binance",
-                perp_exchange="Binance"
+                spot_exchange=spot_exchange_name,
+                perp_exchange=perp_exchange_name
             )
             
         except Exception as e:

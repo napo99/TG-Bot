@@ -236,13 +236,19 @@ class TelegramBot:
             return
         
         if not context.args:
-            await update.message.reply_text("❌ Please provide a symbol. Example: `/price BTC-USDT`", parse_mode='Markdown')
+            await update.message.reply_text("❌ Please provide a symbol. Example: `/price BTC-USDT` or `/price BTC-USDT binance`", parse_mode='Markdown')
             return
         
         symbol = context.args[0].upper().replace('/', '-')
+        
+        # Future-ready: Handle optional exchange parameter
+        exchange = None
+        if len(context.args) >= 2:
+            exchange = context.args[1].lower()
+        
         await update.message.reply_text(f"⏳ Fetching enhanced data for {symbol}...")
         
-        result = await self.market_client.get_combined_price(symbol)
+        result = await self.market_client.get_combined_price(symbol, exchange)
         
         if result['success']:
             data = result['data']
