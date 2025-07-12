@@ -12,7 +12,7 @@ from formatting_utils import (
     format_large_number, format_price, format_percentage, format_volume_with_usd,
     format_dollar_amount, format_dual_timezone_timestamp, get_change_emoji, format_delta_value,
     format_funding_rate, format_long_short_ratio, format_oi_change, format_enhanced_funding_rate,
-    format_delta_with_emoji
+    format_delta_with_emoji, format_market_intelligence
 )
 
 load_dotenv()
@@ -249,7 +249,11 @@ class TelegramBot:
             base_symbol = data['base_symbol']
             base_token = base_symbol.split('/')[0]
             
-            message = f"📊 **{base_symbol}**\n\n"
+            # Exchange names
+            spot_exchange = data.get('spot_exchange', 'Unknown')
+            perp_exchange = data.get('perp_exchange', 'Unknown')
+            
+            message = f"📊 **{base_symbol}** ({spot_exchange})\n\n"
             
             # Spot data with enhanced format
             if 'spot' in data and data['spot']:
@@ -307,7 +311,7 @@ class TelegramBot:
                 dollar_change_24h = (price * change_24h / 100) if change_24h else 0
                 atr_24h_str = f" | ATR: {perp.get('atr_24h', 0):.2f}" if perp.get('atr_24h') else ""
                 
-                message += f"""⚡ **PERPETUALS**
+                message += f"""⚡ **PERPETUALS** ({perp_exchange})
 💰 Price: **{format_price(price)}** | {format_percentage(change_24h)} | {format_dollar_amount(dollar_change_24h)}{atr_24h_str}
 """
                 
@@ -361,6 +365,13 @@ class TelegramBot:
                     message += f"{enhanced_funding}\n"
                 
                 message += "\n"
+            
+            # Market Intelligence Section
+            if 'spot' in data or 'perp' in data:
+                spot_data = data.get('spot', {})
+                perp_data = data.get('perp', {})
+                intelligence = format_market_intelligence(spot_data, perp_data)
+                message += f"{intelligence}\n\n"
             
             if 'spot' not in data and 'perp' not in data:
                 message += "❌ No data available for this symbol\n"
