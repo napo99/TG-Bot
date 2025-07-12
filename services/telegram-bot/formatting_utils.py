@@ -339,25 +339,35 @@ def calculate_long_short_ratio(delta: float, volume: float) -> float:
 
 def format_long_short_ratio(delta: float, volume: float) -> str:
     """
-    Format L/S ratio for display.
+    Format L/S ratio for display as percentage split.
     
     Args:
         delta: Volume delta
         volume: Total volume
     
     Returns:
-        Formatted L/S ratio string like "L/S: 1.56x"
+        Formatted L/S ratio string like "L/S: 48%/52%"
     """
     if volume <= 0:
-        return "L/S: 1.00x"
+        return "L/S: 50%/50%"
     
-    ratio = calculate_long_short_ratio(delta, volume)
+    # Calculate buy and sell volumes
+    buy_volume = (volume + delta) / 2
+    sell_volume = (volume - delta) / 2
     
-    # Display accurate ratios (crypto can show extreme buying/selling pressure)
-    if ratio >= 10:
-        return f"L/S: {ratio:.0f}x"  # Show whole numbers for extreme ratios
+    # Ensure no negative volumes
+    buy_volume = max(0, buy_volume)
+    sell_volume = max(0, sell_volume)
+    
+    # Calculate percentages
+    total = buy_volume + sell_volume
+    if total > 0:
+        buy_pct = (buy_volume / total) * 100
+        sell_pct = (sell_volume / total) * 100
     else:
-        return f"L/S: {ratio:.2f}x"
+        buy_pct = sell_pct = 50
+    
+    return f"L/S: {buy_pct:.0f}%/{sell_pct:.0f}%"
 
 
 def analyze_market_control(delta: float, volume: float) -> tuple:

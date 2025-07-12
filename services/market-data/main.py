@@ -521,7 +521,7 @@ class ExchangeManager:
             
             # Delta calculations (volume-based momentum)
             delta_24h = await self._calculate_volume_delta(candles_15m, 96)  # 96 * 15m = 24h
-            delta_15m = await self._calculate_volume_delta(candles_15m, 1)   # Last 1 period
+            delta_15m = await self._calculate_volume_delta(candles_15m, 1)   # Last 1 period (true 15m)
             
             # ATR calculations (Average True Range)
             # ATR 24h: Use 6 periods of 4h data for recent daily volatility
