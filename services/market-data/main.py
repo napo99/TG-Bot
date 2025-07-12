@@ -1371,7 +1371,7 @@ class MarketDataService:
         
         perp = combined_price.perp
         oi = perp.open_interest
-        oi_15m = perp.open_interest_15m
+        oi_15m = perp.oi_change_15m
         
         if not oi:
             return {}
