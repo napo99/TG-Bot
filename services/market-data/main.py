@@ -496,7 +496,7 @@ class ExchangeManager:
                 perp=perp_data,
                 timestamp=datetime.now(),
                 spot_exchange="Binance",
-                perp_exchange="Binance Futures"
+                perp_exchange="Binance"
             )
             
         except Exception as e:
