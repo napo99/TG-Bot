@@ -126,6 +126,80 @@ def format_funding_rate(funding_rate: Union[float, None]) -> str:
         return "N/A%"
 
 
+def format_enhanced_funding_rate(funding_rate: Union[float, None]) -> str:
+    """
+    Format enhanced funding rate with annual cost, reset timing, and strategy.
+    
+    Args:
+        funding_rate: Funding rate value (can be None)
+    
+    Returns:
+        Multi-line enhanced funding display
+    """
+    if funding_rate is None:
+        return "💸 Funding: N/A"
+    
+    try:
+        from datetime import datetime, timezone
+        
+        funding_rate = float(funding_rate)
+        percentage = funding_rate * 100
+        sign = "+" if percentage >= 0 else ""
+        
+        # Calculate annual cost (funding every 8 hours = 3x daily = 1095x annually)
+        annual_rate = funding_rate * 1095 * 100
+        annual_sign = "+" if annual_rate >= 0 else ""
+        
+        # Calculate time to next reset (8-hour cycles: 00:00, 08:00, 16:00 UTC)
+        now_utc = datetime.now(timezone.utc)
+        current_hour = now_utc.hour
+        
+        # Find next reset hour
+        reset_hours = [0, 8, 16]
+        next_reset = None
+        for reset_hour in reset_hours:
+            if reset_hour > current_hour:
+                next_reset = reset_hour
+                break
+        
+        if next_reset is None:
+            next_reset = reset_hours[0] + 24  # Next day's first reset
+        
+        hours_to_reset = next_reset - current_hour
+        minutes_to_reset = 60 - now_utc.minute
+        if minutes_to_reset == 60:
+            minutes_to_reset = 0
+        else:
+            hours_to_reset -= 1
+        
+        # Market pressure analysis
+        if abs(percentage) < 0.001:
+            pressure = "⚪ NEUTRAL"
+            strategy = "Balanced market"
+        elif percentage > 0.01:
+            pressure = "🔥 LONG SQUEEZE"
+            strategy = "Short bias - longs getting expensive"
+        elif percentage > 0.005:
+            pressure = "🟡 LONG PRESSURE"
+            strategy = "Consider short positions"
+        elif percentage < -0.01:
+            pressure = "❄️ SHORT SQUEEZE"
+            strategy = "Long bias - shorts getting expensive"
+        elif percentage < -0.005:
+            pressure = "🟢 SHORT PRESSURE"
+            strategy = "Consider long positions"
+        else:
+            pressure = "⚪ BALANCED"
+            strategy = "Neutral funding environment"
+        
+        return f"""💸 Funding: {sign}{percentage:.4f}% ({annual_sign}{annual_rate:.2f}% annually)
+⏰ Resets in: {hours_to_reset}h {minutes_to_reset}m | {pressure}
+🎯 Strategy: {strategy}"""
+        
+    except (ValueError, TypeError):
+        return "💸 Funding: N/A"
+
+
 def format_volume_with_usd(volume_native: Union[float, None], token: str, price: Union[float, None], decimals: int = 2) -> str:
     """
     Format volume showing both native token amount and USD value.
@@ -424,7 +498,7 @@ def analyze_momentum(delta_15m: float, delta_24h: float, volume_15m: float, volu
         return "STEADY"
 
 
-def format_oi_change(oi_change: float, token: str, price: float) -> str:
+def format_oi_change(oi_change: float, token: str, price: float, current_oi: float = None) -> str:
     """
     Format OI change with token amount, USD value, and percentage.
     
@@ -432,9 +506,10 @@ def format_oi_change(oi_change: float, token: str, price: float) -> str:
         oi_change: OI change in tokens (can be positive or negative)
         token: Token symbol
         price: Token price in USD
+        current_oi: Current OI for percentage calculation
     
     Returns:
-        Formatted OI change string like "+1,234 BTC (+$145.6M) (+1.4%)"
+        Formatted OI change string like "+3,595 BTC (+$423.6M) | +4.62%"
     """
     if oi_change is None:
         return "N/A"
@@ -452,7 +527,14 @@ def format_oi_change(oi_change: float, token: str, price: float) -> str:
         usd_str = format_large_number(oi_change_usd, 1)
         usd_sign = "+" if oi_change_usd >= 0 else ""
         
-        return f"{token_str} {token} ({usd_sign}${usd_str})"
+        # Calculate percentage change if current OI is available
+        percentage_str = ""
+        if current_oi is not None and current_oi > 0:
+            percentage = (oi_change / current_oi) * 100
+            pct_sign = "+" if percentage >= 0 else ""
+            percentage_str = f" | {pct_sign}{percentage:.2f}%"
+        
+        return f"{token_str} {token} ({usd_sign}${usd_str}){percentage_str}"
         
     except (ValueError, TypeError):
         return "N/A"

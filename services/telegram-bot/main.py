@@ -11,7 +11,8 @@ from dotenv import load_dotenv
 from formatting_utils import (
     format_large_number, format_price, format_percentage, format_volume_with_usd,
     format_dollar_amount, format_dual_timezone_timestamp, get_change_emoji, format_delta_value,
-    format_funding_rate, format_long_short_ratio, format_oi_change
+    format_funding_rate, format_long_short_ratio, format_oi_change, format_enhanced_funding_rate,
+    format_delta_with_emoji
 )
 
 load_dotenv()
@@ -285,14 +286,14 @@ class TelegramBot:
                 volume_24h = spot.get('volume_24h', 0) or 0
                 ls_ratio_24h = format_long_short_ratio(delta_24h, volume_24h)
                 logger.debug(f"SPOT Delta 24h L/S: delta={delta_24h:.2f}, volume={volume_24h:.2f}, ratio={ls_ratio_24h}")
-                message += f"📈 Delta 24h: **{format_delta_value(delta_24h, base_token, price)}** | {ls_ratio_24h}\n"
+                message += f"📈 Delta 24h: **{format_delta_with_emoji(delta_24h, base_token, price)}** | {ls_ratio_24h}\n"
                 
                 # Delta 15m with L/S ratio
                 delta_15m = spot.get('delta_15m', 0) or 0
                 volume_15m = spot.get('volume_15m', 0) or 0
                 ls_ratio_15m = format_long_short_ratio(delta_15m, volume_15m)
                 logger.debug(f"SPOT Delta 15m L/S: delta={delta_15m:.2f}, volume={volume_15m:.2f}, ratio={ls_ratio_15m}")
-                message += f"📈 Delta 15m: **{format_delta_value(delta_15m, base_token, price)}** | {ls_ratio_15m}\n\n"
+                message += f"📈 Delta 15m: **{format_delta_with_emoji(delta_15m, base_token, price)}** | {ls_ratio_15m}\n\n"
             
             # Perp data with enhanced format
             if 'perp' in data and data['perp']:
@@ -329,33 +330,35 @@ class TelegramBot:
                 volume_24h_perp = perp.get('volume_24h', 0) or 0
                 ls_ratio_24h_perp = format_long_short_ratio(delta_24h, volume_24h_perp)
                 logger.debug(f"PERP Delta 24h L/S: delta={delta_24h:.2f}, volume={volume_24h_perp:.2f}, ratio={ls_ratio_24h_perp}")
-                message += f"📈 Delta 24h: **{format_delta_value(delta_24h, base_token, price)}** | {ls_ratio_24h_perp}\n"
+                message += f"📈 Delta 24h: **{format_delta_with_emoji(delta_24h, base_token, price)}** | {ls_ratio_24h_perp}\n"
                 
                 # Delta 15m with L/S ratio
                 delta_15m = perp.get('delta_15m', 0) or 0
                 volume_15m_perp = perp.get('volume_15m', 0) or 0
                 ls_ratio_15m_perp = format_long_short_ratio(delta_15m, volume_15m_perp)
                 logger.debug(f"PERP Delta 15m L/S: delta={delta_15m:.2f}, volume={volume_15m_perp:.2f}, ratio={ls_ratio_15m_perp}")
-                message += f"📈 Delta 15m: **{format_delta_value(delta_15m, base_token, price)}** | {ls_ratio_15m_perp}\n"
+                message += f"📈 Delta 15m: **{format_delta_with_emoji(delta_15m, base_token, price)}** | {ls_ratio_15m_perp}\n"
                 
                 # Open Interest (current snapshot)
                 if perp.get('open_interest'):
                     oi_volume = format_volume_with_usd(perp['open_interest'], base_token, price)
                     message += f"📈 OI: **{oi_volume}**\n"
                 
-                # OI Changes (24h and 15m)
+                # OI Changes (24h and 15m) with percentage
+                current_oi = perp.get('open_interest', 0)
                 if perp.get('oi_change_24h') is not None:
-                    oi_change_24h_str = format_oi_change(perp['oi_change_24h'], base_token, price)
+                    oi_change_24h_str = format_oi_change(perp['oi_change_24h'], base_token, price, current_oi)
                     message += f"📊 OI Change 24h: **{oi_change_24h_str}**\n"
                 
                 if perp.get('oi_change_15m') is not None:
-                    oi_change_15m_str = format_oi_change(perp['oi_change_15m'], base_token, price)
+                    oi_change_15m_str = format_oi_change(perp['oi_change_15m'], base_token, price, current_oi)
                     message += f"📊 OI Change 15m: **{oi_change_15m_str}**\n"
                 
-                # Funding Rate
+                # Enhanced Funding Rate with annual cost and strategy
                 if perp.get('funding_rate') is not None:
                     funding_rate = perp['funding_rate']
-                    message += f"💸 Funding: **{format_funding_rate(funding_rate)}**\n"
+                    enhanced_funding = format_enhanced_funding_rate(funding_rate)
+                    message += f"{enhanced_funding}\n"
                 
                 message += "\n"
             
