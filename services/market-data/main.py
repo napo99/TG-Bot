@@ -1,6 +1,7 @@
 import asyncio
 import os
 import ccxt.pro as ccxt
+import aiohttp
 from typing import Dict, Optional, Any
 from dataclasses import dataclass
 from datetime import datetime
@@ -657,7 +658,6 @@ class ExchangeManager:
             binance_symbol = symbol.replace('/USDT:USDT', 'USDT').replace('/', '')
             logger.debug(f"Fetching OI changes for {symbol} -> {binance_symbol}, current OI: {current_oi}")
             
-            import aiohttp
             async with aiohttp.ClientSession() as session:
                 # Fetch historical OI data in parallel
                 tasks = [
