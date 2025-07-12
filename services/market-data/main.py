@@ -227,57 +227,67 @@ class ExchangeManager:
         # Will be initialized in async context
     
     async def _init_exchanges(self):
-        # Always add Binance for public data (no API keys needed for price data)
-        self.exchanges['binance'] = ccxt.binance({
-            'enableRateLimit': True,
-        })
+        """Dynamic exchange initialization based on configuration"""
+        # Get configured exchanges from environment (comma-separated)
+        # Default to Binance if not specified
+        configured_exchanges = os.getenv('SUPPORTED_EXCHANGES', 'binance,bybit,okx').split(',')
         
-        # Add Binance USD-M Futures for perpetual contracts
-        self.exchanges['binance_futures'] = ccxt.binance({
-            'enableRateLimit': True,
-            'options': {
-                'defaultType': 'future',  # Use futures market
-            }
-        })
+        for exchange_name in configured_exchanges:
+            exchange_name = exchange_name.strip().lower()
+            try:
+                # Check if CCXT supports this exchange
+                if not hasattr(ccxt, exchange_name):
+                    logger.warning(f"❌ CCXT doesn't support exchange: {exchange_name}")
+                    continue
+                
+                # Get exchange class dynamically
+                exchange_class = getattr(ccxt, exchange_name)
+                
+                # Add spot exchange
+                self.exchanges[exchange_name] = exchange_class({
+                    'enableRateLimit': True,
+                })
+                logger.info(f"✅ Added {exchange_name} spot exchange")
+                
+                # Try to add futures version by testing if it supports derivatives
+                try:
+                    futures_exchange = exchange_class({
+                        'enableRateLimit': True,
+                        'options': {
+                            'defaultType': 'future' if exchange_name == 'binance' else 'swap',
+                        }
+                    })
+                    # Test if futures/derivatives are supported
+                    await futures_exchange.load_markets()
+                    if any(market.get('type') in ['future', 'swap'] for market in futures_exchange.markets.values()):
+                        self.exchanges[f"{exchange_name}_futures"] = futures_exchange
+                        logger.info(f"✅ Added {exchange_name}_futures exchange")
+                except Exception as e:
+                    logger.info(f"ℹ️ {exchange_name} doesn't support futures: {e}")
+                
+                # Add authenticated version if API keys available
+                api_key_env = f"{exchange_name.upper()}_API_KEY"
+                secret_key_env = f"{exchange_name.upper()}_SECRET_KEY"
+                
+                if os.getenv(api_key_env):
+                    auth_config = {
+                        'apiKey': os.getenv(api_key_env),
+                        'secret': os.getenv(secret_key_env),
+                        'enableRateLimit': True,
+                    }
+                    
+                    # Add testnet option if available
+                    testnet_env = f"{exchange_name.upper()}_TESTNET"
+                    if os.getenv(testnet_env, 'false').lower() == 'true':
+                        auth_config['sandbox'] = True
+                    
+                    self.exchanges[f"{exchange_name}_auth"] = exchange_class(auth_config)
+                    logger.info(f"✅ Added {exchange_name}_auth with API keys")
+                    
+            except Exception as e:
+                logger.error(f"❌ Failed to initialize {exchange_name}: {e}")
         
-        # Add authenticated exchanges if API keys are provided
-        if os.getenv('BINANCE_API_KEY'):
-            self.exchanges['binance_auth'] = ccxt.binance({
-                'apiKey': os.getenv('BINANCE_API_KEY'),
-                'secret': os.getenv('BINANCE_SECRET_KEY'),
-                'sandbox': os.getenv('BINANCE_TESTNET', 'false').lower() == 'true',
-                'enableRateLimit': True,
-            })
-            
-            self.exchanges['binance_futures_auth'] = ccxt.binance({
-                'apiKey': os.getenv('BINANCE_API_KEY'),
-                'secret': os.getenv('BINANCE_SECRET_KEY'),
-                'sandbox': os.getenv('BINANCE_TESTNET', 'false').lower() == 'true',
-                'enableRateLimit': True,
-                'options': {
-                    'defaultType': 'future',  # Use futures market
-                }
-            })
-        
-        # Bybit public data
-        self.exchanges['bybit'] = ccxt.bybit({
-            'enableRateLimit': True,
-        })
-        
-        # OKX public data (for demonstration)
-        self.exchanges['okx'] = ccxt.okx({
-            'enableRateLimit': True,
-        })
-        
-        if os.getenv('BYBIT_API_KEY'):
-            self.exchanges['bybit_auth'] = ccxt.bybit({
-                'apiKey': os.getenv('BYBIT_API_KEY'),
-                'secret': os.getenv('BYBIT_SECRET_KEY'),
-                'sandbox': os.getenv('BYBIT_TESTNET', 'false').lower() == 'true',
-                'enableRateLimit': True,
-            })
-        
-        logger.info(f"Initialized exchanges: {list(self.exchanges.keys())}")
+        logger.info(f"📊 Initialized exchanges: {list(self.exchanges.keys())}")
     
     async def get_price(self, symbol: str, exchange: str = None) -> PriceData:
         """Get current price for a symbol"""
@@ -419,11 +429,33 @@ class ExchangeManager:
             perp_data = None
             futures_ex = None
             try:
-                # Find any available futures exchange dynamically
-                futures_exchanges = [key for key in self.exchanges.keys() if 'futures' in key.lower()]
-                if futures_exchanges:
-                    futures_key = futures_exchanges[0]  # Use first available futures exchange
-                    futures_ex = self.exchanges.get(futures_key)
+                # Try to use the same exchange for perp data (if it supports futures)
+                # Look for futures version of the same exchange first
+                preferred_futures_key = f"{exchange}_futures"
+                if preferred_futures_key in self.exchanges:
+                    futures_ex = self.exchanges[preferred_futures_key]
+                    logger.info(f"✅ Using {preferred_futures_key} for perp data")
+                else:
+                    # Try the same exchange (some exchanges support both spot and futures)
+                    if exchange in self.exchanges:
+                        # Test if this exchange supports futures/perp contracts
+                        try:
+                            test_ex = self.exchanges[exchange]
+                            # Try to load markets to see if futures are supported
+                            await test_ex.load_markets()
+                            if any(':' in symbol for symbol in test_ex.symbols):  # Check for perp symbols
+                                futures_ex = test_ex
+                                logger.info(f"✅ Using {exchange} (same exchange) for perp data")
+                        except Exception:
+                            logger.info(f"❌ {exchange} doesn't support futures")
+                    
+                    # Fallback: use any available futures exchange
+                    if not futures_ex:
+                        futures_exchanges = [key for key in self.exchanges.keys() if 'futures' in key.lower()]
+                        if futures_exchanges:
+                            futures_key = futures_exchanges[0]
+                            futures_ex = self.exchanges.get(futures_key)
+                            logger.info(f"⚠️ Fallback to {futures_key} for perp data")
                 
                 if futures_ex:
                     # Try different perp symbol formats
