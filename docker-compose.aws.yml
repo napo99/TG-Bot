@@ -29,6 +29,7 @@ services:
     ports:
       - "8001:8001"
     environment:
+      - SUPPORTED_EXCHANGES=binance,bybit,okx,kucoin
       - PORT=8001
     restart: unless-stopped
     deploy:
