@@ -264,6 +264,11 @@ class ExchangeManager:
             'enableRateLimit': True,
         })
         
+        # OKX public data (for demonstration)
+        self.exchanges['okx'] = ccxt.okx({
+            'enableRateLimit': True,
+        })
+        
         if os.getenv('BYBIT_API_KEY'):
             self.exchanges['bybit_auth'] = ccxt.bybit({
                 'apiKey': os.getenv('BYBIT_API_KEY'),
