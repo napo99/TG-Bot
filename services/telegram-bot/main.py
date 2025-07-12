@@ -249,11 +249,10 @@ class TelegramBot:
             base_symbol = data['base_symbol']
             base_token = base_symbol.split('/')[0]
             
-            # Exchange names
-            spot_exchange = data.get('spot_exchange', 'Unknown')
-            perp_exchange = data.get('perp_exchange', 'Unknown')
+            # Exchange name (prefer perp exchange as it's usually the primary data source)
+            exchange_name = data.get('perp_exchange') or data.get('spot_exchange', 'Unknown')
             
-            message = f"📊 **{base_symbol}** ({spot_exchange})\n\n"
+            message = f"📊 **{base_symbol}** ({exchange_name})\n\n"
             
             # Spot data with enhanced format
             if 'spot' in data and data['spot']:
@@ -311,7 +310,7 @@ class TelegramBot:
                 dollar_change_24h = (price * change_24h / 100) if change_24h else 0
                 atr_24h_str = f" | ATR: {perp.get('atr_24h', 0):.2f}" if perp.get('atr_24h') else ""
                 
-                message += f"""⚡ **PERPETUALS** ({perp_exchange})
+                message += f"""⚡ **PERPETUALS**
 💰 Price: **{format_price(price)}** | {format_percentage(change_24h)} | {format_dollar_amount(dollar_change_24h)}{atr_24h_str}
 """
                 
