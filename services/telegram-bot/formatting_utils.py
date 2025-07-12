@@ -353,8 +353,9 @@ def format_long_short_ratio(delta: float, volume: float) -> str:
     
     ratio = calculate_long_short_ratio(delta, volume)
     
+    # Display accurate ratios (crypto can show extreme buying/selling pressure)
     if ratio >= 10:
-        return f"L/S: {ratio:.0f}x"
+        return f"L/S: {ratio:.0f}x"  # Show whole numbers for extreme ratios
     else:
         return f"L/S: {ratio:.2f}x"
 
