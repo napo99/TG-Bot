@@ -1,0 +1,88 @@
+{
+  "total_tests": 11,
+  "successful": 0,
+  "partial": 11,
+  "failed": 0,
+  "success_rate": 0.0,
+  "avg_response_time": 0.01025256243619052,
+  "overall_status": "GOOD",
+  "results": [
+    {
+      "command": "/analysis BTC-USDT 15m",
+      "status": "PARTIAL",
+      "response_time": 0.04277968406677246,
+      "details": "Command executed but formatting issues: Missing section: MARKET ANALYSIS, Missing section: PRICE:, Missing section: VOLUME:, Missing section: CVD:, Missing section: DELTA:, Missing section: OI:, Missing section: INSTITUTIONAL:, Missing section: RETAIL:, Missing section: TECHNICAL:, Missing section: MARKET CONTROL:, Token-first format not found, No emojis found in response, No percentage values found",
+      "timestamp": "2025-07-11T18:15:39.570435"
+    },
+    {
+      "command": "/analysis SOL-USDT 1h",
+      "status": "PARTIAL",
+      "response_time": 0.017570018768310547,
+      "details": "Command executed but formatting issues: Missing section: MARKET ANALYSIS, Missing section: PRICE:, Missing section: VOLUME:, Missing section: CVD:, Missing section: DELTA:, Missing section: OI:, Missing section: INSTITUTIONAL:, Missing section: RETAIL:, Missing section: TECHNICAL:, Missing section: MARKET CONTROL:, Token-first format not found, No emojis found in response, No percentage values found",
+      "timestamp": "2025-07-11T18:15:39.588272"
+    },
+    {
+      "command": "/cvd ETH-USDT 15m",
+      "status": "PARTIAL",
+      "response_time": 0.008316993713378906,
+      "details": "Command executed but formatting issues: Missing section: CVD ANALYSIS, Missing section: CVD:, Missing section: DELTA:, Missing section: TREND:, Token-first format not found, No emojis found in response, No percentage values found",
+      "timestamp": "2025-07-11T18:15:39.596777"
+    },
+    {
+      "command": "/volume BTC-USDT",
+      "status": "PARTIAL",
+      "response_time": 0.00580906867980957,
+      "details": "Command executed but formatting issues: Missing section: VOLUME ANALYSIS, Missing section: VOLUME:, Missing section: CLASSIFICATION:, Token-first format not found, No emojis found in response, No percentage values found",
+      "timestamp": "2025-07-11T18:15:39.602785"
+    },
+    {
+      "command": "/oi SOL-USDT",
+      "status": "PARTIAL",
+      "response_time": 0.004746913909912109,
+      "details": "Command executed but formatting issues: Missing section: OPEN INTEREST, Missing section: TOTAL OI:, Missing section: EXCHANGES:, Token-first format not found, No emojis found in response, No percentage values found",
+      "timestamp": "2025-07-11T18:15:39.607624"
+    },
+    {
+      "command": "/volscan",
+      "status": "PARTIAL",
+      "response_time": 0.007487058639526367,
+      "details": "Command executed but formatting issues: Missing section: VOLUME SCAN, Missing section: SPIKES DETECTED:, Token-first format not found, No emojis found in response, No percentage values found",
+      "timestamp": "2025-07-11T18:15:39.615192"
+    },
+    {
+      "command": "/analysis INVALID-SYMBOL 15m",
+      "status": "PARTIAL",
+      "response_time": 0.0054399967193603516,
+      "details": "Command executed but no clear error message",
+      "timestamp": "2025-07-11T18:15:39.620720"
+    },
+    {
+      "command": "/analysis BTC-USDT 99h",
+      "status": "PARTIAL",
+      "response_time": 0.005583763122558594,
+      "details": "Command executed but no clear error message",
+      "timestamp": "2025-07-11T18:15:39.626512"
+    },
+    {
+      "command": "/cvd NOTREAL-USDT 15m",
+      "status": "PARTIAL",
+      "response_time": 0.005597829818725586,
+      "details": "Command executed but no clear error message",
+      "timestamp": "2025-07-11T18:15:39.632189"
+    },
+    {
+      "command": "/volume FAKE-SYMBOL",
+      "status": "PARTIAL",
+      "response_time": 0.004456043243408203,
+      "details": "Command executed but no clear error message",
+      "timestamp": "2025-07-11T18:15:39.636704"
+    },
+    {
+      "command": "/oi INVALID-PAIR",
+      "status": "PARTIAL",
+      "response_time": 0.004990816116333008,
+      "details": "Command executed but no clear error message",
+      "timestamp": "2025-07-11T18:15:39.641752"
+    }
+  ]
+}

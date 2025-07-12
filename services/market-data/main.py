@@ -1,6 +1,7 @@
 import asyncio
 import os
 import ccxt.pro as ccxt
+import aiohttp
 from typing import Dict, Optional, Any
 from dataclasses import dataclass
 from datetime import datetime
@@ -171,6 +172,13 @@ class PriceData:
     change_24h: Optional[float] = None
     market_type: str = "spot"  # "spot" or "perp"
     market_cap: Optional[float] = None  # Real market cap from CoinGecko
+    # Enhanced 15m data
+    volume_15m: Optional[float] = None
+    change_15m: Optional[float] = None
+    delta_24h: Optional[float] = None
+    delta_15m: Optional[float] = None
+    atr_24h: Optional[float] = None
+    atr_15m: Optional[float] = None
 
 @dataclass
 class PerpData:
@@ -183,6 +191,16 @@ class PerpData:
     funding_rate: Optional[float] = None
     funding_rate_change: Optional[float] = None
     market_cap: Optional[float] = None  # Real market cap from CoinGecko
+    # Enhanced 15m data
+    volume_15m: Optional[float] = None
+    change_15m: Optional[float] = None
+    delta_24h: Optional[float] = None
+    delta_15m: Optional[float] = None
+    atr_24h: Optional[float] = None
+    atr_15m: Optional[float] = None
+    # Real OI change calculations from historical data
+    oi_change_24h: Optional[float] = None  # OI change over 24h
+    oi_change_15m: Optional[float] = None  # OI change over 15m
 
 @dataclass
 class CombinedPriceData:
@@ -190,6 +208,8 @@ class CombinedPriceData:
     spot: Optional[PriceData] = None
     perp: Optional[PerpData] = None
     timestamp: datetime = None
+    spot_exchange: str = "binance"
+    perp_exchange: str = "binance_futures"
 
 @dataclass
 class PositionData:
@@ -207,52 +227,67 @@ class ExchangeManager:
         # Will be initialized in async context
     
     async def _init_exchanges(self):
-        # Always add Binance for public data (no API keys needed for price data)
-        self.exchanges['binance'] = ccxt.binance({
-            'enableRateLimit': True,
-        })
+        """Dynamic exchange initialization based on configuration"""
+        # Get configured exchanges from environment (comma-separated)
+        # Default to Binance if not specified
+        configured_exchanges = os.getenv('SUPPORTED_EXCHANGES', 'binance,bybit,okx').split(',')
         
-        # Add Binance USD-M Futures for perpetual contracts
-        self.exchanges['binance_futures'] = ccxt.binance({
-            'enableRateLimit': True,
-            'options': {
-                'defaultType': 'future',  # Use futures market
-            }
-        })
+        for exchange_name in configured_exchanges:
+            exchange_name = exchange_name.strip().lower()
+            try:
+                # Check if CCXT supports this exchange
+                if not hasattr(ccxt, exchange_name):
+                    logger.warning(f"❌ CCXT doesn't support exchange: {exchange_name}")
+                    continue
+                
+                # Get exchange class dynamically
+                exchange_class = getattr(ccxt, exchange_name)
+                
+                # Add spot exchange
+                self.exchanges[exchange_name] = exchange_class({
+                    'enableRateLimit': True,
+                })
+                logger.info(f"✅ Added {exchange_name} spot exchange")
+                
+                # Try to add futures version by testing if it supports derivatives
+                try:
+                    futures_exchange = exchange_class({
+                        'enableRateLimit': True,
+                        'options': {
+                            'defaultType': 'future' if exchange_name == 'binance' else 'swap',
+                        }
+                    })
+                    # Test if futures/derivatives are supported
+                    await futures_exchange.load_markets()
+                    if any(market.get('type') in ['future', 'swap'] for market in futures_exchange.markets.values()):
+                        self.exchanges[f"{exchange_name}_futures"] = futures_exchange
+                        logger.info(f"✅ Added {exchange_name}_futures exchange")
+                except Exception as e:
+                    logger.info(f"ℹ️ {exchange_name} doesn't support futures: {e}")
+                
+                # Add authenticated version if API keys available
+                api_key_env = f"{exchange_name.upper()}_API_KEY"
+                secret_key_env = f"{exchange_name.upper()}_SECRET_KEY"
+                
+                if os.getenv(api_key_env):
+                    auth_config = {
+                        'apiKey': os.getenv(api_key_env),
+                        'secret': os.getenv(secret_key_env),
+                        'enableRateLimit': True,
+                    }
+                    
+                    # Add testnet option if available
+                    testnet_env = f"{exchange_name.upper()}_TESTNET"
+                    if os.getenv(testnet_env, 'false').lower() == 'true':
+                        auth_config['sandbox'] = True
+                    
+                    self.exchanges[f"{exchange_name}_auth"] = exchange_class(auth_config)
+                    logger.info(f"✅ Added {exchange_name}_auth with API keys")
+                    
+            except Exception as e:
+                logger.error(f"❌ Failed to initialize {exchange_name}: {e}")
         
-        # Add authenticated exchanges if API keys are provided
-        if os.getenv('BINANCE_API_KEY'):
-            self.exchanges['binance_auth'] = ccxt.binance({
-                'apiKey': os.getenv('BINANCE_API_KEY'),
-                'secret': os.getenv('BINANCE_SECRET_KEY'),
-                'sandbox': os.getenv('BINANCE_TESTNET', 'false').lower() == 'true',
-                'enableRateLimit': True,
-            })
-            
-            self.exchanges['binance_futures_auth'] = ccxt.binance({
-                'apiKey': os.getenv('BINANCE_API_KEY'),
-                'secret': os.getenv('BINANCE_SECRET_KEY'),
-                'sandbox': os.getenv('BINANCE_TESTNET', 'false').lower() == 'true',
-                'enableRateLimit': True,
-                'options': {
-                    'defaultType': 'future',  # Use futures market
-                }
-            })
-        
-        # Bybit public data
-        self.exchanges['bybit'] = ccxt.bybit({
-            'enableRateLimit': True,
-        })
-        
-        if os.getenv('BYBIT_API_KEY'):
-            self.exchanges['bybit_auth'] = ccxt.bybit({
-                'apiKey': os.getenv('BYBIT_API_KEY'),
-                'secret': os.getenv('BYBIT_SECRET_KEY'),
-                'sandbox': os.getenv('BYBIT_TESTNET', 'false').lower() == 'true',
-                'enableRateLimit': True,
-            })
-        
-        logger.info(f"Initialized exchanges: {list(self.exchanges.keys())}")
+        logger.info(f"📊 Initialized exchanges: {list(self.exchanges.keys())}")
     
     async def get_price(self, symbol: str, exchange: str = None) -> PriceData:
         """Get current price for a symbol"""
@@ -349,7 +384,7 @@ class ExchangeManager:
             raise
     
     async def get_combined_price(self, base_symbol: str, exchange: str = None) -> CombinedPriceData:
-        """Get both spot and perpetual prices for a symbol"""
+        """Get both spot and perpetual prices for a symbol with enhanced 15m data"""
         try:
             if exchange is None:
                 exchange = next(iter(self.exchanges.keys()))
@@ -360,27 +395,68 @@ class ExchangeManager:
             ex = self.exchanges[exchange]
             base_symbol = base_symbol.upper().replace('-', '/')
             
-            # Try to get spot price
+            # Try to get spot price with enhanced data
             spot_data = None
             try:
                 spot_symbol = f"{base_symbol}"
                 ticker = await ex.fetch_ticker(spot_symbol)
+                
+                # Get 15m candles for enhanced calculations
+                candles_15m = await self._fetch_15m_data(ex, spot_symbol)
+                volume_15m, change_15m, delta_24h, delta_15m, atr_24h, atr_15m = await self._calculate_enhanced_metrics(
+                    candles_15m, ticker.get('baseVolume', 0), ex, spot_symbol
+                )
+                logger.info(f"✅ Enhanced spot metrics: vol_15m={volume_15m}, change_15m={change_15m}")
+                
                 spot_data = PriceData(
                     symbol=spot_symbol,
                     price=ticker['last'],
                     timestamp=datetime.now(),
                     volume_24h=ticker.get('baseVolume'),
                     change_24h=ticker.get('percentage'),
-                    market_type="spot"
+                    market_type="spot",
+                    volume_15m=volume_15m,
+                    change_15m=change_15m,
+                    delta_24h=delta_24h,
+                    delta_15m=delta_15m,
+                    atr_24h=atr_24h,
+                    atr_15m=atr_15m
                 )
             except Exception as e:
                 logger.warning(f"Could not fetch spot data for {base_symbol}: {e}")
             
-            # Try to get perp price with OI and funding
+            # Try to get perp price with OI and funding and enhanced data
             perp_data = None
+            futures_ex = None
             try:
-                # Use futures exchange for perp data
-                futures_ex = self.exchanges.get('binance_futures')
+                # Try to use the same exchange for perp data (if it supports futures)
+                # Look for futures version of the same exchange first
+                preferred_futures_key = f"{exchange}_futures"
+                if preferred_futures_key in self.exchanges:
+                    futures_ex = self.exchanges[preferred_futures_key]
+                    logger.info(f"✅ Using {preferred_futures_key} for perp data")
+                else:
+                    # Try the same exchange (some exchanges support both spot and futures)
+                    if exchange in self.exchanges:
+                        # Test if this exchange supports futures/perp contracts
+                        try:
+                            test_ex = self.exchanges[exchange]
+                            # Try to load markets to see if futures are supported
+                            await test_ex.load_markets()
+                            if any(':' in symbol for symbol in test_ex.symbols):  # Check for perp symbols
+                                futures_ex = test_ex
+                                logger.info(f"✅ Using {exchange} (same exchange) for perp data")
+                        except Exception:
+                            logger.info(f"❌ {exchange} doesn't support futures")
+                    
+                    # Fallback: use any available futures exchange
+                    if not futures_ex:
+                        futures_exchanges = [key for key in self.exchanges.keys() if 'futures' in key.lower()]
+                        if futures_exchanges:
+                            futures_key = futures_exchanges[0]
+                            futures_ex = self.exchanges.get(futures_key)
+                            logger.info(f"⚠️ Fallback to {futures_key} for perp data")
+                
                 if futures_ex:
                     # Try different perp symbol formats
                     perp_symbols = [f"{base_symbol}:USDT", f"{base_symbol}/USDT:USDT"]
@@ -395,18 +471,37 @@ class ExchangeManager:
                             try:
                                 funding_info = await futures_ex.fetch_funding_rate(perp_symbol)
                                 funding_rate = funding_info.get('fundingRate')
-                                # Calculate funding rate change (simplified)
                                 funding_change = 0.0  # Would need historical data for accurate calculation
                             except Exception:
                                 pass
                             
-                            # Try to get open interest
+                            # Try to get open interest (current)
                             open_interest = None
                             try:
                                 oi_info = await futures_ex.fetch_open_interest(perp_symbol)
                                 open_interest = oi_info.get('openInterestAmount')
-                            except Exception:
+                                logger.info(f"🔍 OI fetch for {perp_symbol}: oi_info={oi_info}, open_interest={open_interest}")
+                            except Exception as e:
+                                logger.warning(f"❌ Failed to fetch OI for {perp_symbol}: {e}")
                                 pass
+                            
+                            # Get 15m candles for enhanced calculations
+                            candles_15m = await self._fetch_15m_data(futures_ex, perp_symbol)
+                            volume_15m, change_15m, delta_24h, delta_15m, atr_24h, atr_15m = await self._calculate_enhanced_metrics(
+                                candles_15m, ticker.get('baseVolume', 0), ex, perp_symbol
+                            )
+                            logger.info(f"✅ Enhanced perp metrics: vol_15m={volume_15m}, change_15m={change_15m}")
+                            
+                            # Calculate OI changes from historical data
+                            logger.info(f"🔍 About to fetch OI changes for {perp_symbol}, OI={open_interest}")
+                            try:
+                                oi_changes = await self._get_oi_changes(perp_symbol, open_interest)
+                                logger.info(f"🔍 OI changes result: {oi_changes}")
+                            except Exception as oi_exception:
+                                logger.error(f"❌ OI changes failed: {oi_exception}")
+                                import traceback
+                                logger.error(f"❌ OI Traceback: {traceback.format_exc()}")
+                                oi_changes = {'oi_change_24h': None, 'oi_change_15m': None}
                             
                             perp_data = PerpData(
                                 symbol=perp_symbol,
@@ -416,25 +511,272 @@ class ExchangeManager:
                                 change_24h=ticker.get('percentage'),
                                 open_interest=open_interest,
                                 funding_rate=funding_rate,
-                                funding_rate_change=funding_change
+                                funding_rate_change=funding_change,
+                                volume_15m=volume_15m,
+                                change_15m=change_15m,
+                                delta_24h=delta_24h,
+                                delta_15m=delta_15m,
+                                atr_24h=atr_24h,
+                                atr_15m=atr_15m,
+                                oi_change_24h=oi_changes.get('oi_change_24h'),
+                                oi_change_15m=oi_changes.get('oi_change_15m')
                             )
+                            logger.info(f"🔍 DEBUG: Created PerpData with delta_15m={delta_15m}, delta_24h={delta_24h}")
                             break
-                        except Exception:
+                        except Exception as e:
+                            logger.error(f"❌ Failed to process perp symbol {perp_symbol}: {e}")
+                            import traceback
+                            logger.error(f"❌ Full traceback: {traceback.format_exc()}")
                             continue
                         
             except Exception as e:
                 logger.warning(f"Could not fetch perp data for {base_symbol}: {e}")
             
+            # Get actual exchange names dynamically from CCXT exchange objects
+            spot_exchange_name = "Unknown"
+            if spot_data and ex:
+                # Get exchange name from CCXT exchange object
+                spot_exchange_name = getattr(ex, 'id', exchange).title()
+            
+            perp_exchange_name = "Unknown"
+            if perp_data and futures_ex:
+                # Get futures exchange name from the actual exchange object used
+                perp_exchange_name = getattr(futures_ex, 'id', 'unknown').title()
+            elif perp_data:
+                # Fallback to spot exchange if no futures exchange found
+                perp_exchange_name = getattr(ex, 'id', exchange).title()
+            
             return CombinedPriceData(
                 base_symbol=base_symbol,
                 spot=spot_data,
                 perp=perp_data,
-                timestamp=datetime.now()
+                timestamp=datetime.now(),
+                spot_exchange=spot_exchange_name,
+                perp_exchange=perp_exchange_name
             )
             
         except Exception as e:
             logger.error(f"Error fetching combined price for {base_symbol}: {e}")
             raise
+    
+    async def _fetch_15m_data(self, exchange, symbol: str):
+        """Fetch 15-minute OHLCV data for enhanced calculations"""
+        try:
+            # Fetch last 100 periods (25 hours of 15m data) for calculations
+            # Note: Using ccxt.pro so fetch_ohlcv is async
+            candles = await exchange.fetch_ohlcv(symbol, '15m', limit=100)
+            logger.info(f"✅ Fetched {len(candles)} 15m candles for {symbol}")
+            return candles
+        except Exception as e:
+            logger.warning(f"Could not fetch 15m data for {symbol}: {e}")
+            return []
+    
+    async def _calculate_enhanced_metrics(self, candles_15m: list, volume_24h: float, exchange, symbol: str):
+        """Calculate enhanced metrics from 15m candlestick data"""
+        try:
+            if not candles_15m or len(candles_15m) < 2:
+                return None, None, None, None, None, None
+            
+            # Extract data from candles [timestamp, open, high, low, close, volume]
+            latest_candle = candles_15m[-1]
+            previous_candle = candles_15m[-2] if len(candles_15m) > 1 else latest_candle
+            
+            # 15m volume (latest candle volume)
+            volume_15m = latest_candle[5] if len(latest_candle) > 5 else 0
+            
+            # 15m price change
+            if len(candles_15m) > 1:
+                current_price = latest_candle[4]  # Close price
+                previous_price = previous_candle[4]  # Previous close price
+                change_15m = ((current_price - previous_price) / previous_price) * 100 if previous_price > 0 else 0
+            else:
+                change_15m = 0
+            
+            # Delta calculations (volume-based momentum)
+            delta_24h = await self._calculate_volume_delta(candles_15m, 96)  # 96 * 15m = 24h
+            delta_15m = await self._calculate_volume_delta(candles_15m, 1)   # Last 1 period (true 15m)
+            
+            # ATR calculations (Average True Range)
+            # ATR 24h: Use 6 periods of 4h data for recent daily volatility
+            atr_24h = await self._calculate_atr_24h(exchange, symbol)
+            # ATR 15m: Use 7 periods of 15m data for current session volatility
+            atr_15m = await self._calculate_atr(candles_15m, period=7)
+            
+            return volume_15m, change_15m, delta_24h, delta_15m, atr_24h, atr_15m
+            
+        except Exception as e:
+            logger.warning(f"Error calculating enhanced metrics: {e}")
+            return None, None, None, None, None, None
+    
+    async def _calculate_volume_delta(self, candles: list, periods: int):
+        """Calculate volume delta using price-weighted volume analysis"""
+        try:
+            if not candles or len(candles) < periods:
+                return 0
+            
+            # Take the last 'periods' candles
+            relevant_candles = candles[-periods:]
+            
+            total_delta = 0
+            for candle in relevant_candles:
+                if len(candle) >= 6:
+                    open_price = float(candle[1])
+                    high_price = float(candle[2])
+                    low_price = float(candle[3])
+                    close_price = float(candle[4])
+                    volume = float(candle[5])
+                    
+                    # Calculate buy/sell volume approximation using price action
+                    # Method: Use close position relative to high-low range
+                    # Higher close in range = more buying pressure
+                    if high_price != low_price:
+                        # Close position in range (0 to 1)
+                        close_position = (close_price - low_price) / (high_price - low_price)
+                        
+                        # Split volume based on close position
+                        # close_position > 0.5 means more buying, < 0.5 means more selling
+                        buy_volume = volume * close_position
+                        sell_volume = volume * (1 - close_position)
+                        
+                        candle_delta = buy_volume - sell_volume
+                    else:
+                        # No price movement, assume neutral
+                        candle_delta = 0
+                    
+                    total_delta += candle_delta
+            
+            return total_delta
+            
+        except Exception as e:
+            logger.warning(f"Error calculating volume delta: {e}")
+            return 0
+    
+    async def _calculate_atr_24h(self, exchange, symbol):
+        """Calculate 24h ATR using 6 periods of 4h data for recent daily volatility"""
+        try:
+            # Fetch 4-hour candlestick data (last 10 periods for buffer)
+            candles_4h = await exchange.fetch_ohlcv(symbol, '4h', limit=10)
+            if not candles_4h or len(candles_4h) < 7:  # Need at least 7 for 6 periods
+                logger.warning(f"Insufficient 4h data for ATR calculation: {len(candles_4h) if candles_4h else 0} candles")
+                return None
+            
+            return await self._calculate_atr(candles_4h, period=6)
+            
+        except Exception as e:
+            logger.warning(f"Error calculating 24h ATR: {e}")
+            return None
+    
+    async def _calculate_atr(self, candles: list, period: int = 14):
+        """Calculate Average True Range (ATR)"""
+        try:
+            if not candles or len(candles) < period + 1:
+                return None
+            
+            true_ranges = []
+            
+            # Calculate True Range for each candle
+            for i in range(1, min(len(candles), period + 1)):
+                current = candles[-(i)]
+                previous = candles[-(i+1)]
+                
+                if len(current) >= 5 and len(previous) >= 5:
+                    high = current[2]
+                    low = current[3]
+                    prev_close = previous[4]
+                    
+                    # True Range = max(high-low, high-prev_close, prev_close-low)
+                    tr1 = high - low
+                    tr2 = abs(high - prev_close)
+                    tr3 = abs(prev_close - low)
+                    
+                    true_range = max(tr1, tr2, tr3)
+                    true_ranges.append(true_range)
+            
+            # Calculate ATR as average of true ranges
+            if true_ranges:
+                atr = sum(true_ranges) / len(true_ranges)
+                return atr
+            
+            return None
+            
+        except Exception as e:
+            logger.warning(f"Error calculating ATR: {e}")
+            return None
+    
+    async def _get_oi_changes(self, symbol: str, current_oi: Optional[float]) -> Dict[str, Optional[float]]:
+        """Get historical OI changes from Binance futures API"""
+        try:
+            if not current_oi or current_oi <= 0:
+                logger.debug(f"No current OI data for {symbol}")
+                return {'oi_change_24h': None, 'oi_change_15m': None}
+            
+            # Convert symbol format for Binance API (BTC/USDT:USDT -> BTCUSDT)
+            binance_symbol = symbol.replace('/USDT:USDT', 'USDT').replace('/', '')
+            logger.debug(f"Fetching OI changes for {symbol} -> {binance_symbol}, current OI: {current_oi}")
+            
+            async with aiohttp.ClientSession() as session:
+                # Fetch historical OI data in parallel
+                tasks = [
+                    self._fetch_binance_historical_oi(session, binance_symbol, "1d", 1),  # 24h ago
+                    self._fetch_binance_historical_oi(session, binance_symbol, "5m", 3)   # 15m ago (3 periods of 5m)
+                ]
+                
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                oi_24h_ago = results[0] if not isinstance(results[0], Exception) else None
+                oi_15m_ago = results[1] if not isinstance(results[1], Exception) else None
+                
+                logger.debug(f"OI historical data: 24h_ago={oi_24h_ago}, 15m_ago={oi_15m_ago}")
+                
+                changes = {
+                    'oi_change_24h': current_oi - oi_24h_ago if oi_24h_ago else None,
+                    'oi_change_15m': current_oi - oi_15m_ago if oi_15m_ago else None
+                }
+                
+                logger.info(f"✅ OI changes for {binance_symbol}: 24h={changes['oi_change_24h']}, 15m={changes['oi_change_15m']}")
+                return changes
+                
+        except Exception as e:
+            logger.warning(f"Error fetching OI changes for {symbol}: {e}")
+            return {'oi_change_24h': None, 'oi_change_15m': None}
+    
+    async def _fetch_binance_historical_oi(self, session: aiohttp.ClientSession, symbol: str, period: str, periods_back: int) -> Optional[float]:
+        """Fetch historical OI from Binance futures API"""
+        try:
+            url = f"https://fapi.binance.com/futures/data/openInterestHist"
+            params = {
+                'symbol': symbol,
+                'period': period,
+                'limit': periods_back + 1  # Get extra to ensure we have the right period
+            }
+            
+            logger.debug(f"📡 API Call: {url} with params: {params}")
+            
+            async with session.get(url, params=params) as response:
+                logger.debug(f"📡 Response status: {response.status}")
+                
+                if response.status == 200:
+                    data = await response.json()
+                    logger.debug(f"📡 Response data length: {len(data) if data else 0}")
+                    logger.debug(f"📡 Full response: {data}")
+                    
+                    if data and len(data) >= periods_back:
+                        # Get the period we want (periods_back from end)
+                        historical_data = data[-(periods_back + 1)]
+                        oi_value = float(historical_data['sumOpenInterest'])
+                        logger.debug(f"📡 Extracted OI value: {oi_value} from data: {historical_data}")
+                        return oi_value
+                    else:
+                        logger.warning(f"📡 Insufficient data: got {len(data) if data else 0}, need {periods_back}")
+                else:
+                    response_text = await response.text()
+                    logger.warning(f"📡 API Error {response.status}: {response_text}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"📡 Exception fetching historical OI for {symbol} ({period}): {e}")
+            import traceback
+            logger.error(f"📡 Traceback: {traceback.format_exc()}")
+            return None
     
     async def get_top_symbols(self, market_type: str = "spot", limit: int = 10, exchange: str = None) -> list:
         """Get top symbols by volume"""
@@ -636,7 +978,9 @@ class MarketDataService:
             
             result = {
                 'base_symbol': combined_data.base_symbol,
-                'timestamp': combined_data.timestamp.isoformat()
+                'timestamp': combined_data.timestamp.isoformat(),
+                'spot_exchange': combined_data.spot_exchange,
+                'perp_exchange': combined_data.perp_exchange
             }
             
             if combined_data.spot:
@@ -645,7 +989,13 @@ class MarketDataService:
                     'price': combined_data.spot.price,
                     'volume_24h': combined_data.spot.volume_24h,
                     'change_24h': combined_data.spot.change_24h,
-                    'market_type': 'spot'
+                    'market_type': 'spot',
+                    'volume_15m': getattr(combined_data.spot, 'volume_15m', None),
+                    'change_15m': getattr(combined_data.spot, 'change_15m', None),
+                    'delta_24h': getattr(combined_data.spot, 'delta_24h', None),
+                    'delta_15m': getattr(combined_data.spot, 'delta_15m', None),
+                    'atr_24h': getattr(combined_data.spot, 'atr_24h', None),
+                    'atr_15m': getattr(combined_data.spot, 'atr_15m', None)
                 }
             
             if combined_data.perp:
@@ -657,7 +1007,15 @@ class MarketDataService:
                     'open_interest': combined_data.perp.open_interest,
                     'funding_rate': combined_data.perp.funding_rate,
                     'funding_rate_change': combined_data.perp.funding_rate_change,
-                    'market_type': 'perp'
+                    'market_type': 'perp',
+                    'volume_15m': getattr(combined_data.perp, 'volume_15m', None),
+                    'change_15m': getattr(combined_data.perp, 'change_15m', None),
+                    'delta_24h': getattr(combined_data.perp, 'delta_24h', None),
+                    'delta_15m': getattr(combined_data.perp, 'delta_15m', None),
+                    'atr_24h': getattr(combined_data.perp, 'atr_24h', None),
+                    'atr_15m': getattr(combined_data.perp, 'atr_15m', None),
+                    'oi_change_24h': getattr(combined_data.perp, 'oi_change_24h', None),
+                    'oi_change_15m': getattr(combined_data.perp, 'oi_change_15m', None)
                 }
             
             return {
@@ -820,6 +1178,7 @@ class MarketDataService:
             
             # Format the response exactly as the Telegram bot expects
             price_data = self._format_price_data(combined_price)
+            logger.info(f"🔍 DEBUG: price_data keys: {list(price_data.keys())}")
             
             return {
                 'success': True,
@@ -835,7 +1194,14 @@ class MarketDataService:
                         'volume_24h': float(price_data.get('volume_24h', 0)),
                         'volume_24h_usd': float(price_data.get('volume_24h_usd', 0)),
                         'market_type': price_data.get('market_type', 'spot'),
-                        'funding_rate': price_data.get('funding_rate', 0)
+                        'funding_rate': price_data.get('funding_rate', 0),
+                        # Enhanced 15m metrics
+                        'volume_15m': price_data.get('volume_15m'),
+                        'change_15m': price_data.get('change_15m'),
+                        'delta_15m': price_data.get('delta_15m'),
+                        'delta_24h': price_data.get('delta_24h'),
+                        'atr_15m': price_data.get('atr_15m'),
+                        'atr_24h': price_data.get('atr_24h')
                     },
                     
                     # Volume analysis (formatted for Telegram bot compatibility)
@@ -974,9 +1340,11 @@ class MarketDataService:
         if combined_price.perp:
             price_data = combined_price.perp
             market_type = 'perp'
+            logger.info(f"🔍 DEBUG: Perp data has delta_15m={getattr(price_data, 'delta_15m', 'MISSING')}, delta_24h={getattr(price_data, 'delta_24h', 'MISSING')}")
         elif combined_price.spot:
             price_data = combined_price.spot
             market_type = 'spot'
+            logger.info(f"🔍 DEBUG: Spot data has delta_15m={getattr(price_data, 'delta_15m', 'MISSING')}, delta_24h={getattr(price_data, 'delta_24h', 'MISSING')}")
         else:
             return {}
         
@@ -986,7 +1354,14 @@ class MarketDataService:
             'volume_24h': float(price_data.volume_24h or 0),
             'volume_24h_usd': float((price_data.volume_24h or 0) * price_data.price),
             'market_type': market_type,
-            'funding_rate': float(price_data.funding_rate or 0) if hasattr(price_data, 'funding_rate') else None
+            'funding_rate': float(price_data.funding_rate or 0) if hasattr(price_data, 'funding_rate') else None,
+            # Enhanced metrics
+            'volume_15m': float(price_data.volume_15m or 0) if hasattr(price_data, 'volume_15m') else None,
+            'change_15m': float(price_data.change_15m or 0) if hasattr(price_data, 'change_15m') else None,
+            'delta_24h': float(price_data.delta_24h or 0) if hasattr(price_data, 'delta_24h') else None,
+            'delta_15m': float(price_data.delta_15m or 0) if hasattr(price_data, 'delta_15m') else None,
+            'atr_24h': float(price_data.atr_24h or 0) if hasattr(price_data, 'atr_24h') else None,
+            'atr_15m': float(price_data.atr_15m or 0) if hasattr(price_data, 'atr_15m') else None
         }
     
     def _extract_oi_data(self, combined_price: CombinedPriceData) -> Dict[str, Any]:
@@ -996,17 +1371,26 @@ class MarketDataService:
         
         perp = combined_price.perp
         oi = perp.open_interest
+        oi_15m = perp.open_interest_15m
         
         if not oi:
             return {}
         
         oi_usd = oi * perp.price
+        oi_15m_usd = (oi_15m * perp.price) if oi_15m else None
         
-        return {
+        result = {
             'open_interest': float(oi),
             'open_interest_usd': float(oi_usd),
             'funding_rate': float(perp.funding_rate or 0)
         }
+        
+        # Add 15m OI data if available
+        if oi_15m:
+            result['open_interest_15m'] = float(oi_15m)
+            result['open_interest_15m_usd'] = float(oi_15m_usd)
+        
+        return result
     
     def _analyze_market_sentiment(self, combined_price, volume_spike, cvd_data, tech_indicators) -> Dict[str, Any]:
         """Analyze overall market sentiment and control"""
