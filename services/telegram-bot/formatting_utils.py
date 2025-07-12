@@ -424,6 +424,40 @@ def analyze_momentum(delta_15m: float, delta_24h: float, volume_15m: float, volu
         return "STEADY"
 
 
+def format_oi_change(oi_change: float, token: str, price: float) -> str:
+    """
+    Format OI change with token amount, USD value, and percentage.
+    
+    Args:
+        oi_change: OI change in tokens (can be positive or negative)
+        token: Token symbol
+        price: Token price in USD
+    
+    Returns:
+        Formatted OI change string like "+1,234 BTC (+$145.6M) (+1.4%)"
+    """
+    if oi_change is None:
+        return "N/A"
+    
+    try:
+        # Format token amount
+        sign = "+" if oi_change >= 0 else ""
+        if abs(oi_change) >= 1000:
+            token_str = f"{sign}{oi_change:,.0f}"
+        else:
+            token_str = f"{sign}{oi_change:.2f}"
+        
+        # Format USD amount
+        oi_change_usd = oi_change * price
+        usd_str = format_large_number(oi_change_usd, 1)
+        usd_sign = "+" if oi_change_usd >= 0 else ""
+        
+        return f"{token_str} {token} ({usd_sign}${usd_str})"
+        
+    except (ValueError, TypeError):
+        return "N/A"
+
+
 def analyze_volume_activity(volume_15m: float, volume_24h: float) -> str:
     """
     Analyze volume activity level relative to 24h average.

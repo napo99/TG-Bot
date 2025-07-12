@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from formatting_utils import (
     format_large_number, format_price, format_percentage, format_volume_with_usd,
     format_dollar_amount, format_dual_timezone_timestamp, get_change_emoji, format_delta_value,
-    format_funding_rate, format_long_short_ratio
+    format_funding_rate, format_long_short_ratio, format_oi_change
 )
 
 load_dotenv()
@@ -342,6 +342,15 @@ class TelegramBot:
                 if perp.get('open_interest'):
                     oi_volume = format_volume_with_usd(perp['open_interest'], base_token, price)
                     message += f"📈 OI: **{oi_volume}**\n"
+                
+                # OI Changes (24h and 15m)
+                if perp.get('oi_change_24h') is not None:
+                    oi_change_24h_str = format_oi_change(perp['oi_change_24h'], base_token, price)
+                    message += f"📊 OI Change 24h: **{oi_change_24h_str}**\n"
+                
+                if perp.get('oi_change_15m') is not None:
+                    oi_change_15m_str = format_oi_change(perp['oi_change_15m'], base_token, price)
+                    message += f"📊 OI Change 15m: **{oi_change_15m_str}**\n"
                 
                 # Funding Rate
                 if perp.get('funding_rate') is not None:

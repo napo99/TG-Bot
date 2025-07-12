@@ -197,7 +197,9 @@ class PerpData:
     delta_15m: Optional[float] = None
     atr_24h: Optional[float] = None
     atr_15m: Optional[float] = None
-    open_interest_15m: Optional[float] = None  # 15m OI calculation based on current OI
+    # Real OI change calculations from historical data
+    oi_change_24h: Optional[float] = None  # OI change over 24h
+    oi_change_15m: Optional[float] = None  # OI change over 15m
 
 @dataclass
 class CombinedPriceData:
@@ -435,7 +437,9 @@ class ExchangeManager:
                             try:
                                 oi_info = await futures_ex.fetch_open_interest(perp_symbol)
                                 open_interest = oi_info.get('openInterestAmount')
-                            except Exception:
+                                logger.info(f"🔍 OI fetch for {perp_symbol}: oi_info={oi_info}, open_interest={open_interest}")
+                            except Exception as e:
+                                logger.warning(f"❌ Failed to fetch OI for {perp_symbol}: {e}")
                                 pass
                             
                             # Get 15m candles for enhanced calculations
@@ -445,8 +449,16 @@ class ExchangeManager:
                             )
                             logger.info(f"✅ Enhanced perp metrics: vol_15m={volume_15m}, change_15m={change_15m}")
                             
-                            # Calculate 15m OI based on current OI and volume activity
-                            open_interest_15m = self._calculate_oi_15m(open_interest, volume_15m, ticker.get('baseVolume', 0))
+                            # Calculate OI changes from historical data
+                            logger.info(f"🔍 About to fetch OI changes for {perp_symbol}, OI={open_interest}")
+                            try:
+                                oi_changes = await self._get_oi_changes(perp_symbol, open_interest)
+                                logger.info(f"🔍 OI changes result: {oi_changes}")
+                            except Exception as oi_exception:
+                                logger.error(f"❌ OI changes failed: {oi_exception}")
+                                import traceback
+                                logger.error(f"❌ OI Traceback: {traceback.format_exc()}")
+                                oi_changes = {'oi_change_24h': None, 'oi_change_15m': None}
                             
                             perp_data = PerpData(
                                 symbol=perp_symbol,
@@ -463,11 +475,15 @@ class ExchangeManager:
                                 delta_15m=delta_15m,
                                 atr_24h=atr_24h,
                                 atr_15m=atr_15m,
-                                open_interest_15m=open_interest_15m
+                                oi_change_24h=oi_changes.get('oi_change_24h'),
+                                oi_change_15m=oi_changes.get('oi_change_15m')
                             )
                             logger.info(f"🔍 DEBUG: Created PerpData with delta_15m={delta_15m}, delta_24h={delta_24h}")
                             break
-                        except Exception:
+                        except Exception as e:
+                            logger.error(f"❌ Failed to process perp symbol {perp_symbol}: {e}")
+                            import traceback
+                            logger.error(f"❌ Full traceback: {traceback.format_exc()}")
                             continue
                         
             except Exception as e:
@@ -630,36 +646,80 @@ class ExchangeManager:
             logger.warning(f"Error calculating ATR: {e}")
             return None
     
-    def _calculate_oi_15m(self, open_interest_24h: Optional[float], volume_15m: Optional[float], volume_24h: Optional[float]) -> Optional[float]:
-        """Calculate 15m OI based on current OI and volume activity ratio"""
+    async def _get_oi_changes(self, symbol: str, current_oi: Optional[float]) -> Dict[str, Optional[float]]:
+        """Get historical OI changes from Binance futures API"""
         try:
-            if not open_interest_24h or open_interest_24h <= 0:
-                return None
+            if not current_oi or current_oi <= 0:
+                logger.debug(f"No current OI data for {symbol}")
+                return {'oi_change_24h': None, 'oi_change_15m': None}
             
-            # If we don't have 15m volume data, return a fraction of 24h OI
-            if not volume_15m or not volume_24h or volume_24h <= 0:
-                # Return approximately 1/96th of 24h OI (24h / 15m = 96 periods)
-                return open_interest_24h / 96
+            # Convert symbol format for Binance API (BTC/USDT:USDT -> BTCUSDT)
+            binance_symbol = symbol.replace('/USDT:USDT', 'USDT').replace('/', '')
+            logger.debug(f"Fetching OI changes for {symbol} -> {binance_symbol}, current OI: {current_oi}")
             
-            # Calculate OI based on volume activity ratio
-            # This is an approximation since OI is typically only available as current value
-            volume_ratio = volume_15m / volume_24h
-            
-            # Calculate 15m OI as a fraction of 24h OI weighted by volume activity
-            # We use a combination of time-based fraction and volume-based weighting
-            base_fraction = 1 / 96  # 24h / 15m = 96 periods
-            volume_weight = min(volume_ratio * 96, 3.0)  # Cap at 3x to avoid extreme values
-            
-            oi_15m = open_interest_24h * base_fraction * volume_weight
-            
-            # Ensure result is reasonable (between 0.1% and 20% of 24h OI)
-            min_oi = open_interest_24h * 0.001
-            max_oi = open_interest_24h * 0.2
-            
-            return max(min_oi, min(max_oi, oi_15m))
-            
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                # Fetch historical OI data in parallel
+                tasks = [
+                    self._fetch_binance_historical_oi(session, binance_symbol, "1d", 1),  # 24h ago
+                    self._fetch_binance_historical_oi(session, binance_symbol, "5m", 3)   # 15m ago (3 periods of 5m)
+                ]
+                
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                oi_24h_ago = results[0] if not isinstance(results[0], Exception) else None
+                oi_15m_ago = results[1] if not isinstance(results[1], Exception) else None
+                
+                logger.debug(f"OI historical data: 24h_ago={oi_24h_ago}, 15m_ago={oi_15m_ago}")
+                
+                changes = {
+                    'oi_change_24h': current_oi - oi_24h_ago if oi_24h_ago else None,
+                    'oi_change_15m': current_oi - oi_15m_ago if oi_15m_ago else None
+                }
+                
+                logger.info(f"✅ OI changes for {binance_symbol}: 24h={changes['oi_change_24h']}, 15m={changes['oi_change_15m']}")
+                return changes
+                
         except Exception as e:
-            logger.warning(f"Error calculating 15m OI: {e}")
+            logger.warning(f"Error fetching OI changes for {symbol}: {e}")
+            return {'oi_change_24h': None, 'oi_change_15m': None}
+    
+    async def _fetch_binance_historical_oi(self, session: aiohttp.ClientSession, symbol: str, period: str, periods_back: int) -> Optional[float]:
+        """Fetch historical OI from Binance futures API"""
+        try:
+            url = f"https://fapi.binance.com/futures/data/openInterestHist"
+            params = {
+                'symbol': symbol,
+                'period': period,
+                'limit': periods_back + 1  # Get extra to ensure we have the right period
+            }
+            
+            logger.debug(f"📡 API Call: {url} with params: {params}")
+            
+            async with session.get(url, params=params) as response:
+                logger.debug(f"📡 Response status: {response.status}")
+                
+                if response.status == 200:
+                    data = await response.json()
+                    logger.debug(f"📡 Response data length: {len(data) if data else 0}")
+                    logger.debug(f"📡 Full response: {data}")
+                    
+                    if data and len(data) >= periods_back:
+                        # Get the period we want (periods_back from end)
+                        historical_data = data[-(periods_back + 1)]
+                        oi_value = float(historical_data['sumOpenInterest'])
+                        logger.debug(f"📡 Extracted OI value: {oi_value} from data: {historical_data}")
+                        return oi_value
+                    else:
+                        logger.warning(f"📡 Insufficient data: got {len(data) if data else 0}, need {periods_back}")
+                else:
+                    response_text = await response.text()
+                    logger.warning(f"📡 API Error {response.status}: {response_text}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"📡 Exception fetching historical OI for {symbol} ({period}): {e}")
+            import traceback
+            logger.error(f"📡 Traceback: {traceback.format_exc()}")
             return None
     
     async def get_top_symbols(self, market_type: str = "spot", limit: int = 10, exchange: str = None) -> list:
@@ -898,7 +958,8 @@ class MarketDataService:
                     'delta_15m': getattr(combined_data.perp, 'delta_15m', None),
                     'atr_24h': getattr(combined_data.perp, 'atr_24h', None),
                     'atr_15m': getattr(combined_data.perp, 'atr_15m', None),
-                    'open_interest_15m': getattr(combined_data.perp, 'open_interest_15m', None)
+                    'oi_change_24h': getattr(combined_data.perp, 'oi_change_24h', None),
+                    'oi_change_15m': getattr(combined_data.perp, 'oi_change_15m', None)
                 }
             
             return {
