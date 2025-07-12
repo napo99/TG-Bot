@@ -264,3 +264,321 @@ def format_delta_value(delta: Union[float, None], token: str, price: Union[float
         return f"{token_str} {token} ({usd_sign}${usd_str})" if usd_str != "N/A" else f"{token_str} {token} ($N/A)"
     except (ValueError, TypeError):
         return f"N/A {token} ($N/A)"
+
+
+def format_delta_with_emoji(delta: Union[float, None], token: str, price: Union[float, None], decimals: int = 2) -> str:
+    """
+    Format delta value with green/red dot emoji and both token amount and USD value.
+    
+    Args:
+        delta: Delta value in tokens (can be None)
+        token: Token symbol
+        price: Token price in USD (can be None)
+        decimals: Number of decimal places
+    
+    Returns:
+        Formatted delta string like "🟢 Delta 24h: +800 BTC (+$86.6M)"
+    """
+    if delta is None or price is None:
+        return f"⚪ N/A {token} ($N/A)"
+    
+    try:
+        delta = float(delta)
+        price = float(price)
+        
+        # Get emoji based on delta value
+        emoji = get_change_emoji(delta)
+        
+        sign = "+" if delta >= 0 else ""
+        delta_usd = delta * price
+        
+        # Format token amount
+        if abs(delta) >= 1000:
+            token_str = f"{sign}{delta:,.0f}"
+        else:
+            token_str = f"{sign}{delta:.{decimals}f}"
+        
+        # Format USD amount
+        usd_str = format_large_number(delta_usd, decimals)
+        usd_sign = "+" if delta_usd >= 0 else ""
+        
+        return f"{emoji} {token_str} {token} ({usd_sign}${usd_str})" if usd_str != "N/A" else f"{emoji} {token_str} {token} ($N/A)"
+    except (ValueError, TypeError):
+        return f"⚪ N/A {token} ($N/A)"
+
+
+def calculate_long_short_ratio(delta: float, volume: float) -> float:
+    """
+    Calculate Long/Short ratio from delta and volume.
+    
+    Args:
+        delta: Volume delta (positive = net buying, negative = net selling)
+        volume: Total volume
+    
+    Returns:
+        ratio: Longs over Shorts ratio (e.g., 3.25x means 3.25 longs for every 1 short)
+    """
+    if volume <= 0:
+        return 1.0  # neutral
+    
+    # Calculate buy and sell volumes
+    buy_volume = (volume + delta) / 2
+    sell_volume = (volume - delta) / 2
+    
+    # Ensure no negative volumes
+    buy_volume = max(0, buy_volume)
+    sell_volume = max(0, sell_volume)
+    
+    # Calculate ratio (longs over shorts)
+    if sell_volume > 0:
+        ratio = buy_volume / sell_volume
+        return min(ratio, 99.9)  # Cap at 99.9x for display
+    else:
+        return 99.9
+
+
+def format_long_short_ratio(delta: float, volume: float) -> str:
+    """
+    Format L/S ratio for display.
+    
+    Args:
+        delta: Volume delta
+        volume: Total volume
+    
+    Returns:
+        Formatted L/S ratio string like "L/S: 1.56x"
+    """
+    if volume <= 0:
+        return "L/S: 1.00x"
+    
+    ratio = calculate_long_short_ratio(delta, volume)
+    
+    if ratio >= 10:
+        return f"L/S: {ratio:.0f}x"
+    else:
+        return f"L/S: {ratio:.2f}x"
+
+
+def analyze_market_control(delta: float, volume: float) -> tuple:
+    """
+    Analyze market control and pressure level.
+    
+    Args:
+        delta: Volume delta
+        volume: Total volume
+    
+    Returns:
+        tuple: (control_string, pressure_percentage)
+    """
+    if volume <= 0:
+        return "⚪ BALANCED", 50
+    
+    # Calculate buying pressure percentage
+    buy_pct = ((volume + delta) / (2 * volume)) * 100
+    
+    if buy_pct >= 65:
+        return "🟢 BUYERS", buy_pct
+    elif buy_pct <= 35:
+        return "🔴 SELLERS", 100 - buy_pct  # Show selling pressure
+    else:
+        return "⚪ BALANCED", max(buy_pct, 100 - buy_pct)
+
+
+def analyze_momentum(delta_15m: float, delta_24h: float, volume_15m: float, volume_24h: float) -> str:
+    """
+    Analyze momentum direction by comparing 15m vs 24h normalized delta.
+    
+    Args:
+        delta_15m: 15-minute delta
+        delta_24h: 24-hour delta
+        volume_15m: 15-minute volume
+        volume_24h: 24-hour volume
+    
+    Returns:
+        Momentum string: ACCELERATING, DECELERATING, or STEADY
+    """
+    if volume_24h <= 0 or volume_15m <= 0:
+        return "STEADY"
+    
+    # Normalize deltas to comparable timeframes (per unit volume)
+    delta_24h_norm = delta_24h / volume_24h if volume_24h > 0 else 0
+    delta_15m_norm = delta_15m / volume_15m if volume_15m > 0 else 0
+    
+    # Compare momentum
+    if abs(delta_15m_norm) > abs(delta_24h_norm) * 1.5:
+        return "ACCELERATING"
+    elif abs(delta_15m_norm) < abs(delta_24h_norm) * 0.5:
+        return "DECELERATING"
+    else:
+        return "STEADY"
+
+
+def analyze_volume_activity(volume_15m: float, volume_24h: float) -> str:
+    """
+    Analyze volume activity level relative to 24h average.
+    
+    Args:
+        volume_15m: 15-minute volume
+        volume_24h: 24-hour volume
+    
+    Returns:
+        Activity string with ratio like "HIGH (2.1x)"
+    """
+    if volume_24h <= 0:
+        return "NORMAL (1.0x)"
+    
+    # Expected 15m volume is 1/96th of 24h volume
+    expected_15m = volume_24h / 96
+    ratio = volume_15m / expected_15m if expected_15m > 0 else 1
+    
+    if ratio > 3:
+        return f"EXTREME ({ratio:.1f}x)"
+    elif ratio > 2:
+        return f"HIGH ({ratio:.1f}x)"
+    elif ratio > 1.5:
+        return f"ABOVE AVG ({ratio:.1f}x)"
+    elif ratio < 0.5:
+        return f"LOW ({ratio:.1f}x)"
+    else:
+        return f"NORMAL ({ratio:.1f}x)"
+
+
+def generate_market_signals(control_24h: str, control_15m: str, volume_activity: str, 
+                          delta_15m: float, volume_15m: float, price_change_15m: float) -> str:
+    """
+    Generate market intelligence signals based on current conditions.
+    
+    Args:
+        control_24h: 24H market control string
+        control_15m: 15M market control string
+        volume_activity: Volume activity string
+        delta_15m: 15-minute delta
+        volume_15m: 15-minute volume
+        price_change_15m: 15-minute price change percentage
+    
+    Returns:
+        Market signals string like "Strong Support | Seller Exhaustion | High Activity"
+    """
+    signals = []
+    
+    # Calculate pressure for pattern detection
+    if volume_15m > 0:
+        pressure_pct = abs(delta_15m / volume_15m) * 100
+        
+        # Absorption patterns (high pressure, low price movement)
+        if pressure_pct > 70 and abs(price_change_15m) < 0.1:
+            if delta_15m < 0:
+                signals.append("Strong Support")
+            else:
+                signals.append("Strong Resistance")
+        
+        # Exhaustion patterns (very high pressure)
+        elif pressure_pct > 80:
+            if delta_15m < 0:
+                signals.append("Seller Exhaustion")
+            else:
+                signals.append("Buyer Climax")
+    
+    # Volume context signals
+    if "HIGH" in volume_activity or "EXTREME" in volume_activity:
+        activity_level = volume_activity.split()[0].title()
+        signals.append(f"{activity_level} Activity")
+    
+    # Control divergence patterns
+    if "BUYERS" in control_24h and "SELLERS" in control_15m:
+        signals.append("Institutional Buying")
+    elif "SELLERS" in control_24h and "BUYERS" in control_15m:
+        signals.append("Retail Bounce")
+    
+    return " | ".join(signals[:4])  # Max 4 signals for readability
+
+
+def format_market_intelligence(spot_data: dict, perp_data: dict) -> str:
+    """
+    Format market intelligence section for price command.
+    
+    Args:
+        spot_data: Spot market data dictionary
+        perp_data: Perpetuals market data dictionary
+    
+    Returns:
+        Formatted market intelligence string
+    """
+    # Use perp data as primary (higher volume, more institutional)
+    primary_data = perp_data if perp_data else spot_data
+    if not primary_data:
+        return "🧠 MARKET INTELLIGENCE\n💪 Data unavailable"
+    
+    # 24H Analysis
+    control_24h, pressure_24h = analyze_market_control(
+        primary_data.get('delta_24h', 0), 
+        primary_data.get('volume_24h', 0)
+    )
+    
+    momentum = analyze_momentum(
+        primary_data.get('delta_15m', 0),
+        primary_data.get('delta_24h', 0),
+        primary_data.get('volume_15m', 0),
+        primary_data.get('volume_24h', 0)
+    )
+    
+    # 15M Analysis
+    control_15m, pressure_15m = analyze_market_control(
+        primary_data.get('delta_15m', 0),
+        primary_data.get('volume_15m', 0)
+    )
+    
+    volume_activity = analyze_volume_activity(
+        primary_data.get('volume_15m', 0),
+        primary_data.get('volume_24h', 0)
+    )
+    
+    return f"""🧠 MARKET INTELLIGENCE
+💪 24H Control: {control_24h} ({pressure_24h:.0f}% pressure) | Momentum: {momentum}
+⚡ 15M Control: {control_15m} ({pressure_15m:.0f}% pressure) | Activity: {volume_activity}"""
+
+
+def format_market_summary(spot_data: dict, perp_data: dict) -> str:
+    """
+    Format market summary section for price command.
+    
+    Args:
+        spot_data: Spot market data dictionary
+        perp_data: Perpetuals market data dictionary
+    
+    Returns:
+        Formatted market summary string
+    """
+    # Use perp data as primary
+    primary_data = perp_data if perp_data else spot_data
+    if not primary_data:
+        return "🎯 MARKET SUMMARY\n🧠 Data unavailable"
+    
+    # Analyze market conditions
+    control_24h, _ = analyze_market_control(
+        primary_data.get('delta_24h', 0), 
+        primary_data.get('volume_24h', 0)
+    )
+    
+    control_15m, _ = analyze_market_control(
+        primary_data.get('delta_15m', 0),
+        primary_data.get('volume_15m', 0)
+    )
+    
+    volume_activity = analyze_volume_activity(
+        primary_data.get('volume_15m', 0),
+        primary_data.get('volume_24h', 0)
+    )
+    
+    # Generate signals
+    signals = generate_market_signals(
+        control_24h, control_15m, volume_activity,
+        primary_data.get('delta_15m', 0),
+        primary_data.get('volume_15m', 0),
+        primary_data.get('change_15m', 0)
+    )
+    
+    if signals:
+        return f"🎯 MARKET SUMMARY\n🧠 {signals}"
+    else:
+        return "🎯 MARKET SUMMARY\n🧠 Balanced Market"

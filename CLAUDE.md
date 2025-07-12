@@ -273,5 +273,51 @@ python3 test_new_features.py
 - Rate limiting and error handling
 - No sensitive data in logs or commits
 
+## 🛡️ SYSTEM PROTECTION PROTOCOLS
+
+### Critical File Protection
+- **NEVER MODIFY**: `docker-compose.aws.yml`, `Dockerfile.aws`, any `*.aws` files
+- **HIGH RISK**: `main_webhook.py`, `docker-compose.yml`, service Dockerfiles
+- **SAFE TO MODIFY**: `formatting_utils.py`, test files, documentation
+
+### Service Health Monitoring
+```bash
+# Quick health check
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+curl -f http://localhost:8001/health  # Market data
+curl -f http://localhost:8080/health  # Telegram bot
+
+# Error detection
+docker logs crypto-telegram-bot | grep -i error
+docker logs crypto-market-data | grep -i error
+```
+
+### Change Management Protocol
+1. **Document** change in DEVELOPMENT_WORKFLOW.md
+2. **Backup** with git commit before changes
+3. **Test locally** with full validation checklist
+4. **External verification** via agent review
+5. **Deploy** only after successful testing
+
+### Emergency Procedures
+```bash
+# Service restart
+docker-compose down && docker-compose up -d
+
+# Rollback to working state
+git reset --hard <last_working_commit>
+docker-compose up -d --build
+```
+
+### Validation Checklist
+- [ ] All containers healthy and running
+- [ ] Bot responds to `/start` and `/price BTC-USDT`
+- [ ] Market Intelligence features working
+- [ ] L/S ratios displaying correctly
+- [ ] Memory usage < 400MB combined
+- [ ] No errors in logs
+
+**See `SYSTEM_PROTECTION_GUIDE.md` for comprehensive protection protocols.**
+
 ---
 *This system provides institutional-grade market analysis with enhanced position tracking and sentiment analysis capabilities.*

@@ -15,7 +15,8 @@ from queue import Queue
 from formatting_utils import (
     format_large_number, format_price, format_percentage, format_volume_with_usd,
     format_dollar_amount, format_dual_timezone_timestamp, get_change_emoji, format_delta_value,
-    format_funding_rate
+    format_funding_rate, format_delta_with_emoji, format_long_short_ratio,
+    format_market_intelligence, format_market_summary, analyze_volume_activity
 )
 
 load_dotenv()
@@ -233,7 +234,7 @@ class TelegramBot:
         await self.start(update, context)
     
     async def price_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Enhanced price command showing both spot and perps with 15m data"""
+        """Enhanced price command with market intelligence and L/S ratios"""
         if not self._is_authorized(str(update.effective_user.id)):
             await update.message.reply_text("❌ Unauthorized access")
             return
@@ -252,96 +253,127 @@ class TelegramBot:
             base_symbol = data['base_symbol']
             base_token = base_symbol.split('/')[0]
             
-            message = f"📊 **{base_symbol}**\n\n"
+            # Get exchange name for header
+            spot_exchange = data.get('spot_exchange', 'Binance')
+            message = f"📊 {base_symbol} ({spot_exchange})\n\n"
+            
+            # Extract spot and perp data
+            spot_data = data.get('spot', {})
+            perp_data = data.get('perp', {})
+            
+            # Add Market Intelligence section at the top
+            if spot_data or perp_data:
+                intelligence = format_market_intelligence(spot_data, perp_data)
+                message += f"{intelligence}\n\n"
             
             # Spot data with enhanced format
-            if 'spot' in data and data['spot']:
-                spot = data['spot']
-                price = spot['price']
-                change_24h = spot.get('change_24h', 0) or 0
-                change_15m = spot.get('change_15m', 0) or 0
+            if spot_data:
+                price = spot_data['price']
+                change_24h = spot_data.get('change_24h', 0) or 0
+                change_15m = spot_data.get('change_15m', 0) or 0
+                volume_24h = spot_data.get('volume_24h', 0) or 0
+                volume_15m = spot_data.get('volume_15m', 0) or 0
+                delta_24h = spot_data.get('delta_24h', 0) or 0
+                delta_15m = spot_data.get('delta_15m', 0) or 0
                 
                 # Price row with ATR 24h
-                change_24h_emoji = get_change_emoji(change_24h)
                 dollar_change_24h = (price * change_24h / 100) if change_24h else 0
-                atr_24h_str = f" | ATR: {spot.get('atr_24h', 0):.2f}" if spot.get('atr_24h') else ""
+                atr_24h_str = f" | ATR: {spot_data.get('atr_24h', 0):.2f}" if spot_data.get('atr_24h') else ""
                 
-                message += f"""🏪 **SPOT**
-💰 Price: **{format_price(price)}** | {format_percentage(change_24h)} | {format_dollar_amount(dollar_change_24h)}{atr_24h_str}
+                message += f"""🏪 SPOT
+💰 Price: {format_price(price)} | {format_percentage(change_24h)} | {format_dollar_amount(dollar_change_24h)}{atr_24h_str}
 """
                 
                 # 15m price change
                 change_15m_emoji = get_change_emoji(change_15m)
                 dollar_change_15m = (price * change_15m / 100) if change_15m else 0
-                atr_15m_str = f" | ATR: {spot.get('atr_15m', 0):.2f}" if spot.get('atr_15m') else ""
-                message += f"{change_15m_emoji} Price Change 15m: **{format_percentage(change_15m)}** | {format_dollar_amount(dollar_change_15m)}{atr_15m_str}\n"
+                atr_15m_str = f" | ATR: {spot_data.get('atr_15m', 0):.2f}" if spot_data.get('atr_15m') else ""
+                message += f"{change_15m_emoji} Price Change 15m: {format_percentage(change_15m)} | {format_dollar_amount(dollar_change_15m)}{atr_15m_str}\n"
                 
                 # Volume 24h
-                volume_24h = spot.get('volume_24h', 0) or 0
-                message += f"📊 Volume 24h: **{format_volume_with_usd(volume_24h, base_token, price)}**\n"
+                message += f"📊 Volume 24h: {format_volume_with_usd(volume_24h, base_token, price)}\n"
                 
-                # Volume 15m
-                volume_15m = spot.get('volume_15m', 0) or 0
-                message += f"📊 Volume 15m: **{format_volume_with_usd(volume_15m, base_token, price)}**\n"
+                # Volume 15m with activity context
+                activity_15m = analyze_volume_activity(volume_15m, volume_24h)
+                message += f"📊 Volume 15m: {format_volume_with_usd(volume_15m, base_token, price)} | Activity: {activity_15m}\n"
                 
-                # Delta 24h
-                delta_24h = spot.get('delta_24h', 0) or 0
-                message += f"📈 Delta 24h: **{format_delta_value(delta_24h, base_token, price)}**\n"
+                # Delta 24h with L/S ratio
+                delta_24h_emoji = get_change_emoji(delta_24h)
+                delta_24h_formatted = format_delta_value(delta_24h, base_token, price)
+                ls_ratio_24h = format_long_short_ratio(delta_24h, volume_24h)
+                message += f"📈 Delta 24h: {delta_24h_emoji} {delta_24h_formatted} | {ls_ratio_24h}\n"
                 
-                # Delta 15m
-                delta_15m = spot.get('delta_15m', 0) or 0
-                message += f"📈 Delta 15m: **{format_delta_value(delta_15m, base_token, price)}**\n\n"
+                # Delta 15m with L/S ratio
+                delta_15m_emoji = get_change_emoji(delta_15m)
+                delta_15m_formatted = format_delta_value(delta_15m, base_token, price)
+                ls_ratio_15m = format_long_short_ratio(delta_15m, volume_15m)
+                message += f"📈 Delta 15m: {delta_15m_emoji} {delta_15m_formatted} | {ls_ratio_15m}\n\n"
             
             # Perp data with enhanced format
-            if 'perp' in data and data['perp']:
-                perp = data['perp']
-                price = perp['price']
-                change_24h = perp.get('change_24h', 0) or 0
-                change_15m = perp.get('change_15m', 0) or 0
+            if perp_data:
+                price = perp_data['price']
+                change_24h = perp_data.get('change_24h', 0) or 0
+                change_15m = perp_data.get('change_15m', 0) or 0
+                volume_24h = perp_data.get('volume_24h', 0) or 0
+                volume_15m = perp_data.get('volume_15m', 0) or 0
+                delta_24h = perp_data.get('delta_24h', 0) or 0
+                delta_15m = perp_data.get('delta_15m', 0) or 0
                 
                 # Price row with ATR 24h
-                change_24h_emoji = get_change_emoji(change_24h)
                 dollar_change_24h = (price * change_24h / 100) if change_24h else 0
-                atr_24h_str = f" | ATR: {perp.get('atr_24h', 0):.2f}" if perp.get('atr_24h') else ""
+                atr_24h_str = f" | ATR: {perp_data.get('atr_24h', 0):.2f}" if perp_data.get('atr_24h') else ""
                 
-                message += f"""⚡ **PERPETUALS**
-💰 Price: **{format_price(price)}** | {format_percentage(change_24h)} | {format_dollar_amount(dollar_change_24h)}{atr_24h_str}
+                message += f"""⚡ PERPETUALS
+💰 Price: {format_price(price)} | {format_percentage(change_24h)} | {format_dollar_amount(dollar_change_24h)}{atr_24h_str}
 """
                 
                 # 15m price change
                 change_15m_emoji = get_change_emoji(change_15m)
                 dollar_change_15m = (price * change_15m / 100) if change_15m else 0
-                atr_15m_str = f" | ATR: {perp.get('atr_15m', 0):.2f}" if perp.get('atr_15m') else ""
-                message += f"{change_15m_emoji} Price Change 15m: **{format_percentage(change_15m)}** | {format_dollar_amount(dollar_change_15m)}{atr_15m_str}\n"
+                atr_15m_str = f" | ATR: {perp_data.get('atr_15m', 0):.2f}" if perp_data.get('atr_15m') else ""
+                message += f"{change_15m_emoji} Price Change 15m: {format_percentage(change_15m)} | {format_dollar_amount(dollar_change_15m)}{atr_15m_str}\n"
                 
                 # Volume 24h
-                volume_24h = perp.get('volume_24h', 0) or 0
-                message += f"📊 Volume 24h: **{format_volume_with_usd(volume_24h, base_token, price)}**\n"
+                message += f"📊 Volume 24h: {format_volume_with_usd(volume_24h, base_token, price)}\n"
                 
-                # Volume 15m
-                volume_15m = perp.get('volume_15m', 0) or 0
-                message += f"📊 Volume 15m: **{format_volume_with_usd(volume_15m, base_token, price)}**\n"
+                # Volume 15m with activity context
+                activity_15m = analyze_volume_activity(volume_15m, volume_24h)
+                message += f"📊 Volume 15m: {format_volume_with_usd(volume_15m, base_token, price)} | Activity: {activity_15m}\n"
                 
-                # Delta 24h
-                delta_24h = perp.get('delta_24h', 0) or 0
-                message += f"📈 Delta 24h: **{format_delta_value(delta_24h, base_token, price)}**\n"
+                # Delta 24h with L/S ratio
+                delta_24h_emoji = get_change_emoji(delta_24h)
+                delta_24h_formatted = format_delta_value(delta_24h, base_token, price)
+                ls_ratio_24h = format_long_short_ratio(delta_24h, volume_24h)
+                message += f"📈 Delta 24h: {delta_24h_emoji} {delta_24h_formatted} | {ls_ratio_24h}\n"
                 
-                # Delta 15m
-                delta_15m = perp.get('delta_15m', 0) or 0
-                message += f"📈 Delta 15m: **{format_delta_value(delta_15m, base_token, price)}**\n"
+                # Delta 15m with L/S ratio
+                delta_15m_emoji = get_change_emoji(delta_15m)
+                delta_15m_formatted = format_delta_value(delta_15m, base_token, price)
+                ls_ratio_15m = format_long_short_ratio(delta_15m, volume_15m)
+                message += f"📈 Delta 15m: {delta_15m_emoji} {delta_15m_formatted} | {ls_ratio_15m}\n"
                 
-                # Open Interest
-                if perp.get('open_interest'):
-                    oi_volume = format_volume_with_usd(perp['open_interest'], base_token, price)
-                    message += f"📈 OI 24h: **{oi_volume}**\n"
+                # Open Interest 24h (current)
+                if perp_data.get('open_interest'):
+                    oi_volume = format_volume_with_usd(perp_data['open_interest'], base_token, price)
+                    message += f"📈 OI 24h: {oi_volume}\n"
                 
-                # Funding Rate (8h intervals on Binance)
-                if perp.get('funding_rate') is not None:
-                    message += f"💸 Funding (8h): **{format_funding_rate(perp['funding_rate'])}**\n"
+                # Open Interest 15m
+                if perp_data.get('open_interest_15m'):
+                    oi_15m_volume = format_volume_with_usd(perp_data['open_interest_15m'], base_token, price)
+                    message += f"📈 OI 15m: {oi_15m_volume}\n"
+                
+                # Funding Rate
+                if perp_data.get('funding_rate') is not None:
+                    message += f"💸 Funding: {format_funding_rate(perp_data['funding_rate'])}\n"
                 
                 message += "\n"
             
-            if 'spot' not in data and 'perp' not in data:
+            # Add Market Summary section
+            if spot_data or perp_data:
+                summary = format_market_summary(spot_data, perp_data)
+                message += f"{summary}\n\n"
+            
+            if not spot_data and not perp_data:
                 message += "❌ No data available for this symbol\n"
             
             # Enhanced timestamp with dual timezone
@@ -1384,10 +1416,53 @@ def startup():
     else:
         logger.error("Failed to initialize bot")
 
-# Call startup for both direct run and Gunicorn
-startup()
-
 if __name__ == "__main__":
-    logger.info("Starting Flask webhook server...")
-    port = int(os.getenv('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    # Check if we should use polling mode (for local development)
+    use_polling = os.getenv('USE_POLLING', 'false').lower() == 'true'
+    logger.info(f"USE_POLLING env var: '{os.getenv('USE_POLLING')}', use_polling: {use_polling}")
+    
+    if use_polling:
+        logger.info("Starting in polling mode for local development...")
+        # Use a dedicated polling mode setup
+        try:
+            # Create polling-specific bot without the webhook infrastructure
+            token = os.getenv('TELEGRAM_BOT_TOKEN')
+            if not token:
+                logger.error("TELEGRAM_BOT_TOKEN not found")
+                exit(1)
+            
+            # Create clean application for polling (skip webhook deletion)
+            application = Application.builder().token(token).build()
+            
+            # Create bot instance and add handlers
+            bot_instance = TelegramBot()
+            application.add_handler(CommandHandler("start", bot_instance.start))
+            application.add_handler(CommandHandler("help", bot_instance.help_command))
+            application.add_handler(CommandHandler("price", bot_instance.price_command))
+            application.add_handler(CommandHandler("top10", bot_instance.top10_command))
+            application.add_handler(CommandHandler("analysis", bot_instance.analysis_command))
+            application.add_handler(CommandHandler("volume", bot_instance.volume_command))
+            application.add_handler(CommandHandler("cvd", bot_instance.cvd_command))
+            application.add_handler(CommandHandler("volscan", bot_instance.volscan_command))
+            application.add_handler(CommandHandler("oi", bot_instance.oi_command))
+            application.add_handler(CommandHandler("balance", bot_instance.balance_command))
+            application.add_handler(CommandHandler("positions", bot_instance.positions_command))
+            application.add_handler(CommandHandler("pnl", bot_instance.pnl_command))
+            application.add_error_handler(bot_instance.error_handler)
+            
+            logger.info("Bot handlers registered, starting polling...")
+            # Run polling properly without creating new event loop
+            application.run_polling(drop_pending_updates=True, bootstrap_retries=0)
+            
+        except KeyboardInterrupt:
+            logger.info("Bot stopped by user")
+        except Exception as e:
+            logger.error(f"Error in polling mode: {e}")
+            import traceback
+            traceback.print_exc()
+    else:
+        logger.info("Starting Flask webhook server...")
+        # Call startup for webhook mode only
+        startup()
+        port = int(os.getenv('PORT', 5000))
+        app.run(host='0.0.0.0', port=port, debug=False)
