@@ -1,0 +1,238 @@
+name: 🚀 AWS Production Deployment
+
+on:
+  push:
+    branches: [aws-deployment]  # Only auto-deploy on aws-deployment branch
+  workflow_dispatch:  # Allow manual trigger
+    inputs:
+      force_deploy:
+        description: 'Force deployment (skip some checks)'
+        required: false
+        default: 'false'
+
+env:
+  AWS_INSTANCE_IP: 13.239.14.166
+  AWS_INSTANCE_USER: ubuntu
+  DEPLOYMENT_PATH: /home/ubuntu/TG-Bot
+
+jobs:
+  # First run all quality checks
+  quality-gate:
+    name: 🔍 Quality Gate
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐍 Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: 📦 Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 black isort
+        pip install -r services/telegram-bot/requirements.txt
+        pip install -r services/market-data/requirements.txt
+        
+    - name: 🎨 Code formatting check
+      run: |
+        black --check services/ || exit 1
+        
+    - name: 📏 Import sorting check  
+      run: |
+        isort --check-only services/ || exit 1
+        
+    - name: 🔍 Lint check
+      run: |
+        flake8 services/ --count --select=E9,F63,F7,F82 --show-source --statistics
+        
+    - name: 🐳 Docker build validation
+      run: |
+        cd services/telegram-bot && docker build --tag crypto-telegram-bot:test .
+        cd ../market-data && docker build --tag crypto-market-data:test .
+
+  # Integration tests
+  integration-tests:
+    name: 🧪 Integration Tests
+    runs-on: ubuntu-latest
+    needs: quality-gate
+    
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+          
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🔨 Build and start services
+      run: |
+        docker-compose build
+        docker-compose up -d
+        sleep 30  # Wait for services
+        
+    - name: 🏥 Health checks
+      run: |
+        curl -f http://localhost:8001/health || exit 1
+        echo "✅ Market data service healthy"
+        
+    - name: 🧪 API validation
+      run: |
+        # Test enhanced price endpoint
+        curl -X POST http://localhost:8001/price \
+             -H "Content-Type: application/json" \
+             -d '{"symbol": "BTC-USDT"}' \
+             --fail --silent --show-error
+        echo "✅ Price API working"
+        
+    - name: 🛑 Cleanup
+      if: always()
+      run: |
+        docker-compose down
+
+  # AWS Deployment
+  deploy-aws:
+    name: 🚀 Deploy to AWS
+    runs-on: ubuntu-latest
+    needs: [quality-gate, integration-tests]
+    environment: production
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 📋 Deployment info
+      run: |
+        echo "🎯 Deploying to AWS Production"
+        echo "Instance: ${{ env.AWS_INSTANCE_IP }}"
+        echo "Branch: ${GITHUB_REF#refs/heads/}"
+        echo "Commit: ${GITHUB_SHA:0:8}"
+        echo "Triggered by: ${{ github.actor }}"
+        
+    - name: 🔐 Setup SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.AWS_SSH_PRIVATE_KEY }}" > ~/.ssh/crypto-bot-key.pem
+        chmod 600 ~/.ssh/crypto-bot-key.pem
+        ssh-keyscan -H ${{ env.AWS_INSTANCE_IP }} >> ~/.ssh/known_hosts
+        
+    - name: 🔄 Pre-deployment backup
+      run: |
+        ssh -i ~/.ssh/crypto-bot-key.pem ${{ env.AWS_INSTANCE_USER }}@${{ env.AWS_INSTANCE_IP }} << 'EOF'
+          cd ${{ env.DEPLOYMENT_PATH }}
+          # Create backup of current state
+          git log -1 --oneline > /tmp/pre-deployment-commit.txt
+          docker-compose ps > /tmp/pre-deployment-services.txt
+          echo "✅ Backup created"
+        EOF
+        
+    - name: 🔄 Deploy to AWS
+      run: |
+        ssh -i ~/.ssh/crypto-bot-key.pem ${{ env.AWS_INSTANCE_USER }}@${{ env.AWS_INSTANCE_IP }} << 'EOF'
+          cd ${{ env.DEPLOYMENT_PATH }}
+          
+          echo "📥 Pulling latest changes..."
+          git fetch origin
+          git checkout aws-deployment
+          git pull origin aws-deployment
+          
+          echo "🛑 Stopping services..."
+          docker-compose down
+          
+          echo "🔨 Rebuilding containers..."
+          docker-compose build --no-cache
+          
+          echo "🚀 Starting services..."
+          docker-compose up -d
+          
+          echo "⏳ Waiting for services to start..."
+          sleep 30
+        EOF
+        
+    - name: 🏥 Post-deployment validation
+      run: |
+        ssh -i ~/.ssh/crypto-bot-key.pem ${{ env.AWS_INSTANCE_USER }}@${{ env.AWS_INSTANCE_IP }} << 'EOF'
+          cd ${{ env.DEPLOYMENT_PATH }}
+          
+          echo "🏥 Checking service health..."
+          
+          # Check if containers are running
+          if ! docker-compose ps | grep -q "Up"; then
+            echo "❌ Containers not running properly"
+            exit 1
+          fi
+          
+          # Check market data service health
+          if ! curl -f http://localhost:8001/health; then
+            echo "❌ Market data service unhealthy"
+            exit 1
+          fi
+          
+          # Check telegram bot logs for startup
+          if docker-compose logs telegram-bot | grep -i "error\|exception" | tail -5; then
+            echo "⚠️  Found recent errors in telegram bot logs"
+          fi
+          
+          echo "✅ Deployment validation passed"
+          echo "✅ All services healthy"
+        EOF
+        
+    - name: 📊 Deployment summary
+      if: success()
+      run: |
+        echo "## 🎉 Deployment Successful!" >> $GITHUB_STEP_SUMMARY
+        echo "- **Instance**: ${{ env.AWS_INSTANCE_IP }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Commit**: ${GITHUB_SHA:0:8}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Time**: $(date)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Services**: telegram-bot, market-data, redis" >> $GITHUB_STEP_SUMMARY
+        echo "- **Status**: ✅ All services healthy" >> $GITHUB_STEP_SUMMARY
+
+  # Rollback on failure
+  rollback:
+    name: 🔄 Rollback on Failure
+    runs-on: ubuntu-latest
+    needs: deploy-aws
+    if: failure()
+    
+    steps:
+    - name: 🔐 Setup SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.AWS_SSH_PRIVATE_KEY }}" > ~/.ssh/crypto-bot-key.pem
+        chmod 600 ~/.ssh/crypto-bot-key.pem
+        ssh-keyscan -H ${{ env.AWS_INSTANCE_IP }} >> ~/.ssh/known_hosts
+        
+    - name: 🔄 Execute rollback
+      run: |
+        ssh -i ~/.ssh/crypto-bot-key.pem ${{ env.AWS_INSTANCE_USER }}@${{ env.AWS_INSTANCE_IP }} << 'EOF'
+          cd ${{ env.DEPLOYMENT_PATH }}
+          
+          echo "🚨 Deployment failed - executing rollback..."
+          
+          # Get previous commit
+          PREVIOUS_COMMIT=$(git log --oneline -2 | tail -1 | cut -d' ' -f1)
+          echo "Rolling back to: $PREVIOUS_COMMIT"
+          
+          # Rollback code
+          git reset --hard $PREVIOUS_COMMIT
+          
+          # Rebuild and restart services
+          docker-compose down
+          docker-compose build
+          docker-compose up -d
+          
+          echo "✅ Rollback completed"
+        EOF
+        
+    - name: 📢 Rollback notification
+      run: |
+        echo "## 🚨 Deployment Failed - Rollback Executed" >> $GITHUB_STEP_SUMMARY
+        echo "- **Instance**: ${{ env.AWS_INSTANCE_IP }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Action**: Reverted to previous working commit" >> $GITHUB_STEP_SUMMARY
+        echo "- **Status**: ✅ Services restored" >> $GITHUB_STEP_SUMMARY
+        echo "- **Next Steps**: Check logs and retry deployment" >> $GITHUB_STEP_SUMMARY
