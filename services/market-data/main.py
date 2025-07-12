@@ -412,9 +412,14 @@ class ExchangeManager:
             
             # Try to get perp price with OI and funding and enhanced data
             perp_data = None
+            futures_ex = None
             try:
-                # Use futures exchange for perp data
-                futures_ex = self.exchanges.get('binance_futures')
+                # Find any available futures exchange dynamically
+                futures_exchanges = [key for key in self.exchanges.keys() if 'futures' in key.lower()]
+                if futures_exchanges:
+                    futures_key = futures_exchanges[0]  # Use first available futures exchange
+                    futures_ex = self.exchanges.get(futures_key)
+                
                 if futures_ex:
                     # Try different perp symbol formats
                     perp_symbols = [f"{base_symbol}:USDT", f"{base_symbol}/USDT:USDT"]
@@ -490,22 +495,19 @@ class ExchangeManager:
             except Exception as e:
                 logger.warning(f"Could not fetch perp data for {base_symbol}: {e}")
             
-            # Get actual exchange names dynamically
-            spot_exchange_name = exchange.title() if spot_data else "Unknown"
+            # Get actual exchange names dynamically from CCXT exchange objects
+            spot_exchange_name = "Unknown"
+            if spot_data and ex:
+                # Get exchange name from CCXT exchange object
+                spot_exchange_name = getattr(ex, 'id', exchange).title()
             
-            # Determine perp exchange name based on which futures exchange was used
             perp_exchange_name = "Unknown"
-            if perp_data:
-                # Check which futures exchange we used
-                if 'binance_futures' in self.exchanges:
-                    perp_exchange_name = "Binance"
-                elif 'bybit_futures' in self.exchanges:
-                    perp_exchange_name = "Bybit"
-                elif 'okx_futures' in self.exchanges:
-                    perp_exchange_name = "OKX"
-                else:
-                    # Fallback to the base exchange name
-                    perp_exchange_name = exchange.title()
+            if perp_data and futures_ex:
+                # Get futures exchange name from the actual exchange object used
+                perp_exchange_name = getattr(futures_ex, 'id', 'unknown').title()
+            elif perp_data:
+                # Fallback to spot exchange if no futures exchange found
+                perp_exchange_name = getattr(ex, 'id', exchange).title()
             
             return CombinedPriceData(
                 base_symbol=base_symbol,
