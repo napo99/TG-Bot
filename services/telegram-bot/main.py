@@ -338,15 +338,10 @@ class TelegramBot:
                 logger.debug(f"PERP Delta 15m L/S: delta={delta_15m:.2f}, volume={volume_15m_perp:.2f}, ratio={ls_ratio_15m_perp}")
                 message += f"📈 Delta 15m: **{format_delta_value(delta_15m, base_token, price)}** | {ls_ratio_15m_perp}\n"
                 
-                # Open Interest 24h
+                # Open Interest (current snapshot)
                 if perp.get('open_interest'):
                     oi_volume = format_volume_with_usd(perp['open_interest'], base_token, price)
-                    message += f"📈 OI 24h: **{oi_volume}**\n"
-                
-                # Open Interest 15m
-                if perp.get('open_interest_15m'):
-                    oi_15m_volume = format_volume_with_usd(perp['open_interest_15m'], base_token, price)
-                    message += f"📈 OI 15m: **{oi_15m_volume}**\n"
+                    message += f"📈 OI: **{oi_volume}**\n"
                 
                 # Funding Rate
                 if perp.get('funding_rate') is not None:
