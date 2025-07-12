@@ -324,18 +324,29 @@ class TelegramBot:
                 volume_15m = perp.get('volume_15m', 0) or 0
                 message += f"📊 Volume 15m: **{format_volume_with_usd(volume_15m, base_token, price)}**\n"
                 
-                # Delta 24h
+                # Delta 24h with L/S ratio
                 delta_24h = perp.get('delta_24h', 0) or 0
-                message += f"📈 Delta 24h: **{format_delta_value(delta_24h, base_token, price)}**\n"
+                volume_24h_perp = perp.get('volume_24h', 0) or 0
+                ls_ratio_24h_perp = format_long_short_ratio(delta_24h, volume_24h_perp)
+                logger.debug(f"PERP Delta 24h L/S: delta={delta_24h:.2f}, volume={volume_24h_perp:.2f}, ratio={ls_ratio_24h_perp}")
+                message += f"📈 Delta 24h: **{format_delta_value(delta_24h, base_token, price)}** | {ls_ratio_24h_perp}\n"
                 
-                # Delta 15m
+                # Delta 15m with L/S ratio
                 delta_15m = perp.get('delta_15m', 0) or 0
-                message += f"📈 Delta 15m: **{format_delta_value(delta_15m, base_token, price)}**\n"
+                volume_15m_perp = perp.get('volume_15m', 0) or 0
+                ls_ratio_15m_perp = format_long_short_ratio(delta_15m, volume_15m_perp)
+                logger.debug(f"PERP Delta 15m L/S: delta={delta_15m:.2f}, volume={volume_15m_perp:.2f}, ratio={ls_ratio_15m_perp}")
+                message += f"📈 Delta 15m: **{format_delta_value(delta_15m, base_token, price)}** | {ls_ratio_15m_perp}\n"
                 
-                # Open Interest
+                # Open Interest 24h
                 if perp.get('open_interest'):
                     oi_volume = format_volume_with_usd(perp['open_interest'], base_token, price)
                     message += f"📈 OI 24h: **{oi_volume}**\n"
+                
+                # Open Interest 15m
+                if perp.get('open_interest_15m'):
+                    oi_15m_volume = format_volume_with_usd(perp['open_interest_15m'], base_token, price)
+                    message += f"📈 OI 15m: **{oi_15m_volume}**\n"
                 
                 # Funding Rate
                 if perp.get('funding_rate') is not None:
