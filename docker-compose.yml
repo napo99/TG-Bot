@@ -7,6 +7,7 @@ services:
     ports:
       - "8001:8001"
     environment:
+      - SUPPORTED_EXCHANGES=binance,bybit,okx,kucoin
       - BINANCE_API_KEY=${BINANCE_API_KEY}
       - BINANCE_SECRET_KEY=${BINANCE_SECRET_KEY}
       - BINANCE_TESTNET=${BINANCE_TESTNET:-true}
