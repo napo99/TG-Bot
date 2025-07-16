@@ -319,5 +319,181 @@ docker-compose up -d --build
 
 **See `SYSTEM_PROTECTION_GUIDE.md` for comprehensive protection protocols.**
 
+## 🎯 PROFESSIONAL DEVELOPMENT WORKFLOW
+
+### **MANDATORY GIT WORKFLOW - Modified GitHub Flow**
+**Claude MUST enforce these practices and prevent code breaking:**
+
+#### **Branch Strategy**
+```
+main (production-ready, default branch)
+├── feature/description-2-3-words    # New features
+├── refactor/description-2-3-words   # Code improvements  
+├── fix/description-2-3-words        # Bug fixes
+└── hotfix/description-2-3-words     # Emergency fixes
+```
+
+#### **Branch Naming Convention (ENFORCED)**
+```bash
+# Features (new functionality)
+feature/long-short-ratios
+feature/multi-exchange-oi
+feature/performance-dashboard
+
+# Refactoring (code improvement, no new features)
+refactor/market-data-service
+refactor/error-handling
+refactor/exchange-handlers
+
+# Bug fixes
+fix/telegram-webhook-timeout
+fix/cvd-calculation-error
+fix/memory-leak-issue
+
+# Hotfixes (critical production issues)
+hotfix/auth-bypass-fix
+hotfix/data-corruption-fix
+```
+
+#### **Development Workflow (MANDATORY)**
+```bash
+# 1. Always start from latest main
+git checkout main
+git pull origin main
+
+# 2. Create properly named branch
+git checkout -b feature/new-exchange-support
+
+# 3. Work with frequent commits
+git add .
+git commit -m "feat: Add Bitget exchange integration"
+
+# 4. Push and test
+git push origin feature/new-exchange-support
+# LOCAL TESTING REQUIRED BEFORE MERGE
+
+# 5. Merge to main when ready
+git checkout main
+git merge feature/new-exchange-support
+git push origin main
+
+# 6. Clean up
+git branch -d feature/new-exchange-support
+git push origin --delete feature/new-exchange-support
+```
+
+#### **Multiple Features - Git Worktrees**
+```bash
+# Main development area
+~/projects/crypto-assistant/          # Main worktree
+
+# Additional features in parallel
+git worktree add ../crypto-assistant-feature1 feature/long-short-ratios
+git worktree add ../crypto-assistant-feature2 feature/performance-opt
+
+# Work in isolated environments
+cd ../crypto-assistant-feature1  # Work on feature 1
+cd ../crypto-assistant-feature2  # Work on feature 2
+```
+
+### **TESTING STRATEGY (MANDATORY)**
+Claude MUST enforce testing before any merge:
+
+#### **Pre-Merge Testing Checklist**
+```bash
+# 1. Docker health check
+docker-compose up -d --build
+docker-compose ps  # All services healthy
+
+# 2. API functionality test
+curl -f http://localhost:8001/health
+curl -X POST http://localhost:8001/comprehensive_analysis \
+  -d '{"symbol": "BTC-USDT", "timeframe": "15m"}'
+
+# 3. Container logs check
+docker logs crypto-telegram-bot | grep -i error
+docker logs crypto-market-data | grep -i error
+
+# 4. Feature-specific testing
+python3 test_new_features.py
+./scripts/test_all_features.sh
+```
+
+#### **Deployment Pipeline**
+```
+LOCAL TESTING ✅ → MERGE TO MAIN ✅ → PRODUCTION DEPLOYMENT ✅
+```
+
+### **ANTI-POLLUTION STRATEGIES (ENFORCED)**
+Claude MUST prevent branch pollution:
+
+#### **Branch Management Rules**
+- **Max 3 active feature branches** at once
+- **Delete after merge** - no branch hoarding
+- **Merge within 1 week** - no long-lived branches
+- **Use descriptive names** - enforce naming convention
+- **Test before merge** - always verify locally
+
+#### **Cleanup Commands**
+```bash
+# Weekly cleanup (Claude should remind)
+git branch --merged main | grep -v main | xargs -n 1 git branch -d
+git remote prune origin
+
+# Remove stale branches
+git branch -r --merged main | grep -v main | sed 's/origin\///' | xargs -n 1 git push origin --delete
+```
+
+### **PRODUCTION DEPLOYMENT**
+#### **Safe Production Deployment**
+```bash
+# SSH to AWS production
+ssh -i ~/.ssh/crypto-assistant.pem ec2-user@13.239.14.166
+
+# Production deployment steps
+cd /home/ec2-user/TG-Bot
+git branch backup-before-deploy-$(date +%Y%m%d-%H%M%S)
+git pull origin main
+docker-compose up -d --build
+
+# Health verification
+sleep 30
+curl -f http://localhost:8001/health
+curl -f http://localhost:8080/health
+docker-compose ps
+```
+
+### **CLAUDE ENFORCEMENT RULES**
+Claude MUST:
+1. **Reject** improperly named branches
+2. **Require** testing before merge suggestions
+3. **Prevent** direct main branch modifications
+4. **Enforce** cleanup after feature completion
+5. **Validate** Docker health before deployment
+6. **Backup** before major changes
+7. **Document** all changes in commit messages
+
+### **REFACTORING GUIDELINES**
+- **Small incremental changes** - one concept per commit
+- **Test after each commit** - maintain working state
+- **Use refactor/ prefix** - clear intent
+- **Document changes** - update relevant docs
+- **Preserve functionality** - no feature changes during refactor
+
+### **EMERGENCY PROCEDURES**
+```bash
+# Rollback production
+git reset --hard <last_working_commit>
+docker-compose up -d --build
+
+# Service restart
+docker-compose down && docker-compose up -d
+
+# Branch recovery
+git checkout backup-before-deploy-YYYYMMDD-HHMMSS
+```
+
+**⚠️ CRITICAL: Claude must prevent any actions that violate these workflows and actively guide toward best practices.**
+
 ---
 *This system provides institutional-grade market analysis with enhanced position tracking and sentiment analysis capabilities.*
