@@ -1,0 +1,91 @@
+# Enhanced Docker Compose with health checks for monitoring
+# Simple, practical health checks - no overengineering
+
+version: '3.8'
+
+services:
+  telegram-bot:
+    build: 
+      context: ./services/telegram-bot
+      dockerfile: Dockerfile
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - AUTHORIZED_USERS=${AUTHORIZED_USERS}
+      - MARKET_DATA_URL=http://crypto-market-data:8001
+    volumes:
+      - ./data/logs:/app/logs
+    depends_on:
+      - market-data
+    restart: unless-stopped
+    # Simple health check
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # Resource limits for AWS t3.micro
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+    networks:
+      - crypto-network
+
+  market-data:
+    build: 
+      context: ./services/market-data
+      dockerfile: Dockerfile
+    environment:
+      - BINANCE_API_KEY=${BINANCE_API_KEY}
+      - BINANCE_SECRET_KEY=${BINANCE_SECRET_KEY}
+      - SUPPORTED_EXCHANGES=${SUPPORTED_EXCHANGES:-binance,bybit,okx}
+    volumes:
+      - ./data/logs:/app/logs
+    restart: unless-stopped
+    # Health check with API test
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8001/health || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 60s
+    # Resource limits for AWS t3.micro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+    networks:
+      - crypto-network
+
+  # Optional Redis for caching (lightweight)
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    # Minimal resources
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+        reservations:
+          memory: 32M
+    networks:
+      - crypto-network
+
+networks:
+  crypto-network:
+    driver: bridge
+
+# Health check commands for manual testing:
+# docker-compose -f docker-compose.monitoring.yml ps
+# docker-compose -f docker-compose.monitoring.yml exec telegram-bot curl http://localhost:8080/health
+# docker-compose -f docker-compose.monitoring.yml exec market-data curl http://localhost:8001/health
