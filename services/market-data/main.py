@@ -201,6 +201,7 @@ class PerpData:
     # Real OI change calculations from historical data
     oi_change_24h: Optional[float] = None  # OI change over 24h
     oi_change_15m: Optional[float] = None  # OI change over 15m
+    open_interest_15m: Optional[float] = None  # 15m OI value
 
 @dataclass
 class CombinedPriceData:
