@@ -97,3 +97,7 @@ config/local.env
 htmlcov/
 .coverage
 .pytest_cache/
+
+# Temporary files and coordination logs
+/tmp/yolo_*/
+organize_docs.sh
