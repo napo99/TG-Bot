@@ -15,11 +15,20 @@ services:
       - BYBIT_TESTNET=${BYBIT_TESTNET:-true}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      interval: 60s
+      timeout: 5s
+      retries: 2
+      start_period: 30s
     networks:
       - crypto-network
 
@@ -34,8 +43,23 @@ services:
       - MARKET_DATA_URL=http://market-data:8001
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     depends_on:
-      - market-data
+      market-data:
+        condition: service_healthy
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 90s
+      timeout: 10s
+      retries: 2
+      start_period: 30s
     networks:
       - crypto-network
 

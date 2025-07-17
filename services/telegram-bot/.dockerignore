@@ -1,0 +1,77 @@
+# Development and build files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Testing
+.pytest_cache/
+.coverage
+.coverage.*
+cover/
+*.cover
+.hypothesis/
+.tox/
+.nox/
+
+# Environment and logs
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+*.log
+logs/
+restart.log
+bot.log
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Test and debug files
+test_*.py
+debug_*.py
+comprehensive_test.py
+verify_*.py
+
+# Documentation and AWS files
+README.md
+*.md
+WEBHOOK_MIGRATION_GUIDE.md
+aws_diagnosis.md
+troubleshooting_guide.md
+Dockerfile.aws
+docker-compose.production.yml
+*.sh
