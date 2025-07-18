@@ -101,3 +101,16 @@ htmlcov/
 # Temporary files and coordination logs
 /tmp/yolo_*/
 organize_docs.sh
+
+# Temporary analysis files
+*_ANALYSIS.md
+*_CHECKLIST.md
+*_INSTRUCTIONS.md
+*_VERIFICATION.md
+*_SUCCESS_*.md
+*_CLEANUP_*.md
+*_YOLO_*.md
+GET_*.md
+EXECUTE_*.md
+MANUAL_*.md
+test_*.py
