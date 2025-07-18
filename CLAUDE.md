@@ -25,11 +25,11 @@ Advanced cryptocurrency market analysis platform with institutional-grade featur
 
 ### ✅ LATEST: AWS Production Deployment Complete (July 4, 2025)
 - **Infrastructure**: AWS EC2 t3.micro (i-0be83d48202d03ef1) in Sydney region
-- **Public IP**: 13.239.14.166 with full webhook functionality
+- **Public IP**: 13.239.14.166 running stable polling architecture
 - **Repository**: Migrated to napo99/TG-Bot.git with proper branch management
-- **Webhook Migration**: Complete transition from polling to webhook architecture
+- **Architecture**: Using polling mode (main.py) for reliability and simplicity
 - **Branch Resolution**: Merged webhook-testing into aws-deployment branch
-- **Security**: Configured security groups for ports 8080 (webhook) and 8001 (market data)
+- **Security**: Configured security groups for port 8001 (market data)
 - **Services**: All 3 Docker containers running (telegram-bot, market-data, redis)
 - **Performance**: Sub-2 second response times, <400MB memory usage
 - **Status**: ✅ PRODUCTION READY & OPERATIONAL
@@ -276,8 +276,8 @@ python3 test_new_features.py
 ## 🛡️ SYSTEM PROTECTION PROTOCOLS
 
 ### Critical File Protection
-- **NEVER MODIFY**: `docker-compose.aws.yml`, `Dockerfile.aws`, any `*.aws` files
-- **HIGH RISK**: `main_webhook.py`, `docker-compose.yml`, service Dockerfiles
+- **NEVER MODIFY**: Production configuration files without testing
+- **HIGH RISK**: `docker-compose.yml`, service Dockerfiles, `main.py`
 - **SAFE TO MODIFY**: `formatting_utils.py`, test files, documentation
 
 ### Service Health Monitoring

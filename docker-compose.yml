@@ -54,12 +54,6 @@ services:
         reservations:
           cpus: '0.1'
           memory: 64M
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 90s
-      timeout: 10s
-      retries: 2
-      start_period: 30s
     networks:
       - crypto-network
 
