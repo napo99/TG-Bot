@@ -26,8 +26,5 @@ COPY --chown=app:app . .
 # Switch to non-root user
 USER app
 
-# Health check for telegram bot
-HEALTHCHECK --interval=90s --timeout=10s --start-period=30s --retries=2 \
-    CMD curl -f http://localhost:8080/health || exit 1
 
 CMD ["python", "-u", "main.py"]
