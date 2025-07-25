@@ -31,7 +31,8 @@ git checkout main
 git pull origin main
 
 # MANUAL STEP: Create prod.env with your new production token
-echo "TELEGRAM_BOT_TOKEN=8079723149:AAEHn34S6MzDDWnpkTGqBUd8d4V7BbVjyMI" > prod.env
+# IMPORTANT: Replace YOUR_PRODUCTION_TOKEN with actual token manually on AWS
+echo "TELEGRAM_BOT_TOKEN=YOUR_PRODUCTION_TOKEN_HERE" > prod.env
 echo "TELEGRAM_CHAT_ID=1145681525" >> prod.env
 
 # Copy to active environment
