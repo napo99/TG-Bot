@@ -127,7 +127,7 @@ def main():
     print("=====================")
     
     success, stdout, stderr = run_command(
-        'curl -X POST "https://api.telegram.org/bot8079723149:AAFGirYfAue-6yYTmaCQLw9cuZHImnhokE8/setWebhook" -H "Content-Type: application/x-www-form-urlencoded" -d "url=http://13.239.14.166:8080/webhook"',
+        'curl -X POST "https://api.telegram.org/botYOUR_BOT_TOKEN_HERE/setWebhook" -H "Content-Type: application/x-www-form-urlencoded" -d "url=http://13.239.14.166:8080/webhook"',
         "Setting webhook"
     )
     

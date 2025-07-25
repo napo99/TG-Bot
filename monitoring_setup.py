@@ -38,7 +38,7 @@ def check_service_health():
         }
     
     # Test production bot
-    prod_token = "8079723149:AAFGirYfAue-6yYTmaCQLw9cuZHImnhokE8"
+    prod_token = "YOUR_BOT_TOKEN_HERE"
     bot_url = f"https://api.telegram.org/bot{prod_token}/getMe"
     
     try:

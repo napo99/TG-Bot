@@ -34,7 +34,7 @@ else
     echo "❌ .env file missing - creating it"
     cat > .env << EOF
 # Telegram Configuration
-TELEGRAM_BOT_TOKEN=8079723149:AAFGirYfAue-6yYTmaCQLw9cuZHImnhokE8
+TELEGRAM_BOT_TOKEN=YOUR_BOT_TOKEN_HERE
 TELEGRAM_CHAT_ID=1145681525
 
 # Service Configuration  

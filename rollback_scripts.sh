@@ -63,7 +63,7 @@ remove_webhook() {
     echo "🔄 Removing Telegram webhook..."
     
     # Remove webhook using bot token
-    BOT_TOKEN="8079723149:AAFGirYfAue-6yYTmaCQLw9cuZHImnhokE8"
+    BOT_TOKEN="YOUR_BOT_TOKEN_HERE"
     
     echo "📞 Calling Telegram API to delete webhook..."
     response=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/deleteWebhook")
@@ -92,7 +92,7 @@ check_status() {
     
     echo ""
     echo "🤖 Webhook Info:"
-    BOT_TOKEN="8079723149:AAFGirYfAue-6yYTmaCQLw9cuZHImnhokE8"
+    BOT_TOKEN="YOUR_BOT_TOKEN_HERE"
     curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getWebhookInfo" | python3 -m json.tool
     
     echo ""

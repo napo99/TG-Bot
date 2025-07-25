@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class CryptoTradingBotTester:
     def __init__(self):
         # Bot configuration
-        self.bot_token = "8079723149:AAFGirYfAue-6yYTmaCQLw9cuZHImnhokE8"
+        self.bot_token = "YOUR_BOT_TOKEN_HERE"
         self.webhook_url = "http://13.239.14.166:8080"
         self.market_data_url = "http://13.239.14.166:8001"
         
