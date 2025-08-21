@@ -177,18 +177,20 @@ class TechnicalAnalysisService:
             
             # Use timeframe-appropriate periods for VWAP calculation
             # This matches trading app behavior better than fixed 100 candles
+            # Optimized VWAP periods for trading effectiveness
+            # Shorter periods provide more responsive signals for actual trading
             vwap_periods = {
                 '1m': 60,      # 1 hour - responsive for scalping
                 '3m': 40,      # 2 hours - short-term 
                 '5m': 48,      # 4 hours - balanced
-                '15m': 24,     # 6 hours - session view (USER'S CHOICE)
-                '30m': 24,     # 12 hours - extended session
-                '1h': 24,      # 24 hours - daily view
-                '2h': 12,      # 24 hours - daily equivalent
-                '4h': 6,       # 24 hours - daily equivalent
-                '6h': 4,       # 24 hours - daily equivalent
-                '12h': 2,      # 24 hours - daily equivalent
-                '1d': 7,       # 1 week - longer term
+                '15m': 96,     # 24 hours - full day context
+                '30m': 48,     # 24 hours - extended session
+                '1h': 72,      # 3 days - optimal for swing trading
+                '2h': 36,      # 3 days - equivalent
+                '4h': 42,      # 7 days - position trading
+                '6h': 28,      # 7 days - equivalent
+                '12h': 14,     # 7 days - equivalent
+                '1d': 20,      # 20 days - monthly positioning
             }
             
             # Get appropriate period for this timeframe, fallback to 50 if not specified

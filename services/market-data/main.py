@@ -12,11 +12,13 @@ try:
     from .volume_analysis import VolumeAnalysisEngine, VolumeSpike, CVDData
     from .technical_indicators import TechnicalAnalysisService, TechnicalIndicators
     from .oi_analysis import OIAnalysisService
+    from .profile_calculator import ProfileCalculator
 except ImportError:
     # For direct execution
     from volume_analysis import VolumeAnalysisEngine, VolumeSpike, CVDData
     from technical_indicators import TechnicalAnalysisService, TechnicalIndicators
     from oi_analysis import OIAnalysisService
+    from profile_calculator import ProfileCalculator
 
 load_dotenv()
 
@@ -1588,6 +1590,18 @@ async def create_app():
         result = await market_service.handle_test_exchange_oi_request(exchange, symbol)
         return web.json_response(result)
     
+    async def market_profile_handler(request):
+        data = await request.json()
+        symbol = data.get('symbol')
+        exchange = data.get('exchange', 'binance')
+        
+        calculator = ProfileCalculator()
+        try:
+            result = await calculator.calculate_all_profiles(symbol, exchange)
+            return web.json_response(result)
+        finally:
+            await calculator.close()
+    
     app.router.add_get('/health', health_handler)
     app.router.add_post('/price', price_handler)
     app.router.add_post('/combined_price', combined_price_handler)
@@ -1603,6 +1617,7 @@ async def create_app():
     app.router.add_post('/pnl', pnl_handler)
     app.router.add_post('/multi_oi', multi_oi_handler)
     app.router.add_post('/test_exchange_oi', test_exchange_oi_handler)
+    app.router.add_post('/market_profile', market_profile_handler)
     
     return app
 

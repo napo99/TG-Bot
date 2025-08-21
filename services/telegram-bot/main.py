@@ -149,6 +149,18 @@ class MarketDataClient:
             logger.error(f"Error fetching comprehensive analysis: {e}")
             return {'success': False, 'error': str(e)}
     
+    async def get_market_profile(self, symbol: str) -> Dict[str, Any]:
+        session = await self._get_session()
+        try:
+            async with session.post(f"{self.base_url}/market_profile", json={
+                'symbol': symbol,
+                'exchange': 'binance'
+            }) as response:
+                return await response.json()
+        except Exception as e:
+            logger.error(f"Error fetching market profile: {e}")
+            return {'success': False, 'error': str(e)}
+    
     async def get_oi_analysis(self, symbol: str) -> Dict[str, Any]:
         session = await self._get_session()
         try:
@@ -203,6 +215,7 @@ class TelegramBot:
 • `/cvd <symbol> [timeframe]` - Cumulative Volume Delta (e.g., /cvd ETH-USDT 1h)
 • `/volscan [threshold] [timeframe]` - Scan all symbols for volume spikes (e.g., /volscan 200 15m)
 • `/oi <symbol>` - Open Interest analysis across exchanges (e.g., /oi BTC)
+• `/profile <symbol>` - Market Profile VP & TPO analysis (e.g., /profile BTC)
 
 💼 **Portfolio Commands:**
 • `/balance` - Show account balance
@@ -482,6 +495,147 @@ class TelegramBot:
             await update.message.reply_text(message, parse_mode='Markdown')
         else:
             await update.message.reply_text(f"❌ Error fetching P&L: {result['error']}")
+    
+    async def profile_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        Market Profile command - Volume Profile and TPO analysis
+        Usage: /profile BTC or /profile ETH
+        """
+        if not self._is_authorized(str(update.effective_user.id)):
+            await update.message.reply_text("❌ Unauthorized access")
+            return
+        
+        # Parse symbol (default to BTC)
+        symbol = "BTC"
+        if context.args:
+            symbol = context.args[0].upper().replace('/', '').replace('-', '')
+        
+        # Send loading message
+        loading_msg = await update.message.reply_text(
+            f"⏳ Calculating Market Profile for {symbol}...\n"
+            f"Computing VP & TPO across 5 timeframes..."
+        )
+        
+        try:
+            # Call market data service
+            result = await self.market_client.get_market_profile(symbol)
+            
+            if result['success']:
+                # Format the response
+                message = self._format_profile_response(result['data'])
+                
+                # Delete loading message and send result
+                await loading_msg.delete()
+                await update.message.reply_text(message, parse_mode='Markdown')
+            else:
+                await loading_msg.edit_text(f"❌ Error: {result.get('error', 'Unknown error')}")
+                
+        except Exception as e:
+            logger.error(f"Profile command error: {e}")
+            await loading_msg.edit_text(f"❌ Error calculating profile: {str(e)}")
+
+    def _format_profile_response(self, data: dict) -> str:
+        """
+        Format profile data for Telegram display
+        """
+        symbol = data['symbol']
+        current_price = data['current_price']
+        
+        # Build message header
+        message = f"""📊 **MARKET PROFILE - {symbol}**
+💰 Current: ${current_price:,.2f}
+{'─' * 30}
+
+"""
+        
+        # Process each timeframe
+        for tf in ['1m', '15m', '1h', '4h', '1d']:
+            if tf not in data:
+                continue
+            
+            tf_data = data[tf]
+            vp = tf_data['volume_profile']
+            tpo = tf_data['tpo']
+            period = tf_data['period']
+            candles = tf_data['candles']
+            
+            # Check if price is in value area
+            vp_in_va = "✅" if vp['val'] <= current_price <= vp['vah'] else "❌"
+            tpo_in_va = "✅" if tpo['val'] <= current_price <= tpo['vah'] else "❌"
+            
+            # Format section with VWAP integration and smart ordering
+            vwap = tf_data.get('vwap', current_price)
+            
+            # Calculate VWAP distance percentage
+            vwap_distance = ((current_price - vwap) / vwap) * 100
+            vwap_arrow = "↑" if current_price > vwap else "↓"
+            # Add timeframe context with realistic trading periods
+            tf_periods = {'1m': '30m', '15m': '8h', '1h': '1d', '4h': '1d', '1d': '1w'}
+            period_label = tf_periods.get(tf, '?')
+            vwap_text = f"VWAP ({period_label}): ${vwap:,.0f} {vwap_arrow} ({vwap_distance:+.1f}%)"
+            
+            # Create price levels list for smart ordering
+            levels = [
+                ('VAH', vp['vah'], f"VAH: ${vp['vah']:,.0f} {vp_in_va}"),
+                ('POC', vp['poc'], f"POC: ${vp['poc']:,.0f}"),
+                ('VAL', vp['val'], f"VAL: ${vp['val']:,.0f}"),
+                ('VWAP', vwap, vwap_text)
+            ]
+            
+            # Sort by price (highest to lowest)
+            levels.sort(key=lambda x: x[1], reverse=True)
+            
+            # Format the profile section
+            if tf != '1d':
+                message += f"{tf.upper()} Profile\n"
+                for _, _, level_text in levels:
+                    message += f"- {level_text}\n"
+                message += "\n"
+            else:
+                message += f"Daily Profile\n"
+                for _, _, level_text in levels:
+                    message += f"- {level_text}\n"
+                message += f"TPO 30m: POC: ${tpo['poc']:,.0f} | VAL: ${tpo['val']:,.0f} | VAH: ${tpo['vah']:,.0f}\n\n"
+        
+        # Add analysis summary
+        message += f"""{'─' * 30}
+📍 **ANALYSIS**
+"""
+        
+        # Count how many timeframes have price in value area
+        in_vp_count = 0
+        in_tpo_count = 0
+        
+        for tf in ['1m', '15m', '1h', '4h', '1d']:
+            if tf in data:
+                vp = data[tf]['volume_profile']
+                tpo = data[tf]['tpo']
+                if vp['val'] <= current_price <= vp['vah']:
+                    in_vp_count += 1
+                if tpo['val'] <= current_price <= tpo['vah']:
+                    in_tpo_count += 1
+        
+        # Market state analysis
+        if in_vp_count >= 3 and in_tpo_count >= 3:
+            message += "• ✅ **BALANCED**: Price within value area on most timeframes\n"
+            message += "• Strategy: Mean reversion likely, fade breakouts\n"
+        elif in_vp_count <= 1 or in_tpo_count <= 1:
+            message += "• ⚠️ **TRENDING**: Price outside value area on most timeframes\n"
+            message += "• Strategy: Follow trend, breakout continuation likely\n"
+        else:
+            message += "• ⚪ **TRANSITIONING**: Mixed signals across timeframes\n"
+            message += "• Strategy: Wait for clearer structure\n"
+        
+        # Add key levels
+        message += f"""
+📊 **KEY LEVELS**
+- 1H POC: ${data.get('1h', {}).get('volume_profile', {}).get('poc', 0):,.0f} (High volume node)
+- 4H VA: ${data.get('4h', {}).get('volume_profile', {}).get('val', 0):,.0f} - ${data.get('4h', {}).get('volume_profile', {}).get('vah', 0):,.0f}
+- Daily POC: ${data.get('1d', {}).get('volume_profile', {}).get('poc', 0):,.0f} (Major reference)
+
+🕐 {datetime.now().strftime('%H:%M:%S')} UTC / {(datetime.now().replace(hour=(datetime.now().hour + 8) % 24)).strftime('%H:%M:%S')} SGT"""
+        
+        return message
     
     async def top10_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Top 10 symbols command handler"""
@@ -1244,6 +1398,7 @@ async def setup_bot_commands(application):
             BotCommand("balance", "💳 Show account balance"),
             BotCommand("positions", "📊 Show open positions"),
             BotCommand("pnl", "📈 Show P&L summary"),
+            BotCommand("profile", "📊 Market Profile (VP & TPO) analysis"),
         ]
         await application.bot.set_my_commands(commands)
         logger.info("Bot commands registered successfully")
@@ -1276,6 +1431,7 @@ def main():
     application.add_handler(CommandHandler("balance", bot.balance_command))
     application.add_handler(CommandHandler("positions", bot.positions_command))
     application.add_handler(CommandHandler("pnl", bot.pnl_command))
+    application.add_handler(CommandHandler("profile", bot.profile_command))
     
     # Add error handler
     application.add_error_handler(bot.error_handler)
