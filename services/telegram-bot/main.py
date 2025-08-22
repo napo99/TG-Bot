@@ -14,6 +14,8 @@ from formatting_utils import (
     format_funding_rate, format_long_short_ratio, format_oi_change, format_enhanced_funding_rate,
     format_delta_with_emoji, format_market_intelligence
 )
+from liquidation_monitor import LiquidationMonitor
+from oi_monitor import OIMonitor
 
 load_dotenv()
 
@@ -185,6 +187,11 @@ class TelegramBot:
         auth_users = os.getenv('TELEGRAM_CHAT_ID', '')
         if auth_users:
             self.authorized_users.update(auth_users.split(','))
+        
+        # Initialize proactive monitoring (will be started later)
+        self.liquidation_monitor = None
+        self.oi_monitor = None
+        self.application = None  # Set by main function
     
     def _is_authorized(self, user_id: str) -> bool:
         return str(user_id) in self.authorized_users or len(self.authorized_users) == 0
@@ -217,6 +224,13 @@ class TelegramBot:
 • `/oi <symbol>` - Open Interest analysis across exchanges (e.g., /oi BTC)
 • `/profile <symbol>` - Market Profile VP & TPO analysis (e.g., /profile BTC)
 
+🚨 **Proactive Alerts (NEW!):**
+• `/alerts` - Show alert system status
+• `/alerts start` - Start real-time liquidation & OI monitoring
+• `/alerts stop` - Stop proactive monitoring
+• `/alerts status` - Detailed monitoring status
+• `/liquidations` - Show recent large liquidations
+
 💼 **Portfolio Commands:**
 • `/balance` - Show account balance
 • `/positions` - Show open positions  
@@ -230,6 +244,7 @@ class TelegramBot:
 • `/price ETH-USDT` (shows both spot & perps)
 • `/volume BTC-USDT 15m` (volume spike detection)
 • `/cvd ETH-USDT 1h` (buy/sell pressure analysis)
+• `/alerts start` (enable real-time alerts)
         """
         
         await update.message.reply_text(welcome_text, parse_mode='Markdown')
@@ -1382,6 +1397,152 @@ CVD shows cumulative market sentiment
             logger.error(f"Fallback traceback: {traceback.format_exc()}")
             return f"❌ Error formatting analysis data for {symbol}. Debug info logged."
     
+    async def alerts_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Alert system control command"""
+        if not self._is_authorized(str(update.effective_user.id)):
+            await update.message.reply_text("❌ Unauthorized access")
+            return
+        
+        # Check if subcommand provided
+        if not context.args:
+            # Show status
+            liq_status = "❌ Stopped"
+            oi_status = "❌ Stopped"
+            
+            if self.liquidation_monitor:
+                status = self.liquidation_monitor.get_status()
+                liq_status = "✅ Running" if status['running'] else "❌ Stopped"
+            
+            if self.oi_monitor:
+                status = self.oi_monitor.get_status()
+                oi_status = "✅ Running" if status['running'] else "❌ Stopped"
+            
+            message = f"""🚨 **Proactive Alert System Status**
+
+📉 **Liquidation Monitor**: {liq_status}
+📊 **OI Explosion Monitor**: {oi_status}
+
+**Commands:**
+• `/alerts start` - Start proactive monitoring
+• `/alerts stop` - Stop proactive monitoring  
+• `/alerts status` - Show detailed status
+• `/alerts recent` - Show recent alerts
+
+**Thresholds:**
+• BTC: $100k+ liquidations, 15%+ OI changes
+• ETH: $50k+ liquidations, 18%+ OI changes
+• SOL: $25k+ liquidations, 25%+ OI changes"""
+            
+            await update.message.reply_text(message, parse_mode='Markdown')
+            return
+        
+        subcommand = context.args[0].lower()
+        
+        if subcommand == 'start':
+            await self._start_monitoring()
+            await update.message.reply_text("🚨 **Proactive Alert Monitoring Started**\n\n✅ Liquidation cascade detection activated\n✅ OI explosion monitoring activated\n\nYou'll receive real-time alerts for significant market events!", parse_mode='Markdown')
+        
+        elif subcommand == 'stop':
+            await self._stop_monitoring()
+            await update.message.reply_text("🛑 **Proactive Alert Monitoring Stopped**\n\nReal-time alerts have been disabled.", parse_mode='Markdown')
+        
+        elif subcommand == 'status':
+            await self._send_detailed_status(update)
+        
+        elif subcommand == 'recent':
+            await self._send_recent_alerts(update)
+        
+        else:
+            await update.message.reply_text("❌ Unknown command. Use: start, stop, status, or recent")
+    
+    async def _start_monitoring(self):
+        """Start proactive monitoring"""
+        try:
+            # Initialize monitors if not exists
+            if not self.liquidation_monitor:
+                self.liquidation_monitor = LiquidationMonitor(self)
+            if not self.oi_monitor:
+                self.oi_monitor = OIMonitor(self)
+            
+            # Start monitoring
+            asyncio.create_task(self.liquidation_monitor.start_monitoring())
+            asyncio.create_task(self.oi_monitor.start_monitoring())
+            
+            logger.info("Proactive monitoring started")
+        except Exception as e:
+            logger.error(f"Error starting monitoring: {e}")
+    
+    async def _stop_monitoring(self):
+        """Stop proactive monitoring"""
+        try:
+            if self.liquidation_monitor:
+                self.liquidation_monitor.stop_monitoring()
+            if self.oi_monitor:
+                await self.oi_monitor.stop_monitoring()
+            
+            logger.info("Proactive monitoring stopped")
+        except Exception as e:
+            logger.error(f"Error stopping monitoring: {e}")
+    
+    async def _send_detailed_status(self, update: Update):
+        """Send detailed monitoring status"""
+        liq_status = {}
+        oi_status = {}
+        
+        if self.liquidation_monitor:
+            liq_status = self.liquidation_monitor.get_status()
+        if self.oi_monitor:
+            oi_status = self.oi_monitor.get_status()
+        
+        message = f"""📊 **Detailed Monitoring Status**
+
+**📉 Liquidation Monitor:**
+• Running: {'✅' if liq_status.get('running') else '❌'}
+• Connected: {'✅' if liq_status.get('connected') else '❌'}
+• Tracked: {liq_status.get('total_tracked', 0)} liquidations
+
+**📊 OI Monitor:**
+• Running: {'✅' if oi_status.get('running') else '❌'}
+• Symbols: {oi_status.get('symbols_monitored', 0)}
+• Check interval: {oi_status.get('check_interval', 0)}s
+• Total snapshots: {oi_status.get('total_snapshots', 0)}
+
+**🎯 Current Thresholds:**
+• BTC: $100k+ liq, 15%+ OI
+• ETH: $50k+ liq, 18%+ OI  
+• SOL: $25k+ liq, 25%+ OI"""
+        
+        await update.message.reply_text(message, parse_mode='Markdown')
+    
+    async def _send_recent_alerts(self, update: Update):
+        """Send recent liquidations/alerts"""
+        if not self.liquidation_monitor:
+            await update.message.reply_text("❌ Liquidation monitor not initialized")
+            return
+        
+        recent = self.liquidation_monitor.get_recent_liquidations(5)
+        
+        if not recent:
+            await update.message.reply_text("📊 No recent liquidations tracked")
+            return
+        
+        message = "📊 **Recent Large Liquidations:**\n\n"
+        
+        for liq in recent[-5:]:  # Last 5
+            time_str = liq.timestamp.strftime('%H:%M:%S')
+            side_emoji = "📉" if liq.side == "LONG" else "📈"
+            message += f"{side_emoji} **{liq.symbol}** {liq.side} - ${liq.value_usd:,.0f} at {time_str}\n"
+        
+        await update.message.reply_text(message, parse_mode='Markdown')
+    
+    async def liquidations_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show recent liquidations"""
+        if not self._is_authorized(str(update.effective_user.id)):
+            await update.message.reply_text("❌ Unauthorized access")
+            return
+        
+        await self._send_recent_alerts(update)
+
     async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Error handler"""
         logger.error(f"Update {update} caused error {context.error}")
@@ -1402,6 +1563,8 @@ async def setup_bot_commands(application):
             BotCommand("cvd", "📈 Cumulative Volume Delta (/cvd BTC-USDT 1h)"),
             BotCommand("volscan", "🔍 Scan volume spikes (/volscan 200 15m)"),
             BotCommand("oi", "📊 Open Interest analysis (/oi BTC)"),
+            BotCommand("alerts", "🚨 Proactive alert system control"),
+            BotCommand("liquidations", "📉 Show recent large liquidations"),
             BotCommand("balance", "💳 Show account balance"),
             BotCommand("positions", "📊 Show open positions"),
             BotCommand("pnl", "📈 Show P&L summary"),
@@ -1425,6 +1588,9 @@ def main():
     # Create application
     application = Application.builder().token(token).build()
     
+    # Set application reference for monitors
+    bot.application = application
+    
     # Add command handlers
     application.add_handler(CommandHandler("start", bot.start))
     application.add_handler(CommandHandler("help", bot.help_command))
@@ -1435,6 +1601,8 @@ def main():
     application.add_handler(CommandHandler("cvd", bot.cvd_command))
     application.add_handler(CommandHandler("volscan", bot.volscan_command))
     application.add_handler(CommandHandler("oi", bot.oi_command))
+    application.add_handler(CommandHandler("alerts", bot.alerts_command))
+    application.add_handler(CommandHandler("liquidations", bot.liquidations_command))
     application.add_handler(CommandHandler("balance", bot.balance_command))
     application.add_handler(CommandHandler("positions", bot.positions_command))
     application.add_handler(CommandHandler("pnl", bot.pnl_command))
