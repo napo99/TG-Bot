@@ -7,7 +7,7 @@
 **Status**: RESOLVED  
 
 ## WHAT HAPPENED
-Production bot token `8079723149:AAEHn34S6MzDDWnpkTGqBUd8d4V7BbVjyMI` was accidentally committed to GitHub in deployment scripts:
+Production bot token `8079723149:AAEH[REDACTED]` was accidentally committed to GitHub in deployment scripts:
 - `PROFESSIONAL_AWS_DEPLOYMENT.sh` 
 - `AWS_PRODUCTION_COMMANDS.sh`
 
@@ -27,7 +27,7 @@ Production bot token `8079723149:AAEHn34S6MzDDWnpkTGqBUd8d4V7BbVjyMI` was accide
 ### Token Revocation Steps:
 1. **Generate new production token** via @BotFather in Telegram
 2. **Update AWS production** with new token
-3. **Revoke old exposed token** (8079723149:AAEHn34S6MzDDWnpkTGqBUd8d4V7BbVjyMI)
+3. **Revoke old exposed token** (8079723149:AAEH[REDACTED])
 
 ### AWS Update Commands:
 ```bash
