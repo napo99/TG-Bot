@@ -549,7 +549,7 @@ class TelegramBot:
 """
         
         # Process each timeframe
-        for tf in ['1m', '15m', '1h', '4h', '1d']:
+        for tf in ['1m', '15m', '30m', '1h', '4h', '1d']:
             if tf not in data:
                 continue
             
@@ -569,8 +569,8 @@ class TelegramBot:
             # Calculate VWAP distance percentage
             vwap_distance = ((current_price - vwap) / vwap) * 100
             vwap_arrow = "↑" if current_price > vwap else "↓"
-            # Add timeframe context with realistic trading periods
-            tf_periods = {'1m': '30m', '15m': '8h', '1h': '1d', '4h': '1d', '1d': '1w'}
+            # Add session-based context (matches TradingView)
+            tf_periods = {'1m': 'Session', '15m': 'Session', '30m': 'Session', '1h': 'Session', '4h': 'Session', '1d': 'Daily'}
             period_label = tf_periods.get(tf, '?')
             vwap_text = f"VWAP ({period_label}): ${vwap:,.0f} {vwap_arrow} ({vwap_distance:+.1f}%)"
             
@@ -586,7 +586,12 @@ class TelegramBot:
             levels.sort(key=lambda x: x[1], reverse=True)
             
             # Format the profile section
-            if tf != '1d':
+            if tf == '30m':
+                message += f"30M Profile\n"
+                for _, _, level_text in levels:
+                    message += f"- {level_text}\n"
+                message += f"TPO: POC: ${tpo['poc']:,.0f} | VAL: ${tpo['val']:,.0f} | VAH: ${tpo['vah']:,.0f}\n\n"
+            elif tf != '1d':
                 message += f"{tf.upper()} Profile\n"
                 for _, _, level_text in levels:
                     message += f"- {level_text}\n"
@@ -595,7 +600,7 @@ class TelegramBot:
                 message += f"Daily Profile\n"
                 for _, _, level_text in levels:
                     message += f"- {level_text}\n"
-                message += f"TPO 30m: POC: ${tpo['poc']:,.0f} | VAL: ${tpo['val']:,.0f} | VAH: ${tpo['vah']:,.0f}\n\n"
+                message += "\n"
         
         # Add analysis summary
         message += f"""{'─' * 30}

@@ -2,7 +2,7 @@ import numpy as np
 import aiohttp
 import asyncio
 from typing import Dict, List, Tuple, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 import logging
 
@@ -39,6 +39,13 @@ class ProfileCalculator:
             'period_name': 'Last 24 hours',
             'tpo_period': 15     # 15 minute TPO blocks
         },
+        '30m': {
+            'interval': '30m',
+            'lookback': 48,      # 24 hours of 30m candles
+            'bins': 24,          # TradingView default
+            'period_name': 'Last 24 hours',
+            'tpo_period': 30     # 30 minute TPO blocks
+        },
         '1h': {
             'interval': '1h',
             'lookback': 168,     # 7 days
@@ -62,14 +69,12 @@ class ProfileCalculator:
         }
     }
     
-    # Separate VWAP periods optimized for trading relevance
-    VWAP_PERIODS = {
-        '1m': 30,      # 30 minutes - scalping
-        '5m': 24,      # 2 hours - short-term  
-        '15m': 32,     # 8 hours - session
-        '1h': 24,      # 1 day - intraday
-        '4h': 6,       # 1 day - daily VWAP
-        '1d': 7,       # 1 week - weekly VWAP
+    # Session-based approach - midnight UTC for all timeframes (professional standard)
+    SESSION_CONFIG = {
+        'intraday_reset_hour': 0,  # 00:00 UTC for all timeframes (consistent)
+        'daily_reset_hour': 0,     # 00:00 UTC for all timeframes (consistent)
+        'intraday_timeframes': ['1m', '15m', '30m', '1h'],  # Use 00:00 UTC reset
+        'daily_timeframes': ['4h', '1d']                    # Use 00:00 UTC reset
     }
     
     def __init__(self):
@@ -88,6 +93,44 @@ class ProfileCalculator:
             await self.session.close()
             self.session = None
     
+    def _get_session_start_time(self, timeframe: str) -> datetime:
+        """Get session start time based on timeframe - TradingView compatible"""
+        utc_now = datetime.now(timezone.utc)
+        
+        # All timeframes now use midnight UTC reset (professional standard)
+        reset_hour = 0  # Always midnight UTC
+        session_start = utc_now.replace(hour=reset_hour, minute=0, second=0, microsecond=0)
+        
+        # Since reset is midnight, no need to check if we haven't reached today's reset
+        # Current session always starts at today's midnight
+                
+        return session_start
+    
+    def _calculate_session_candles(self, interval: str, session_start: datetime) -> int:
+        """Calculate number of candles needed from session start"""
+        utc_now = datetime.now(timezone.utc)
+        time_elapsed = utc_now - session_start
+        hours_elapsed = max(0.1, time_elapsed.total_seconds() / 3600)  # Minimum 0.1 hour
+        
+        # Convert interval to minutes
+        interval_minutes = {
+            '1m': 1, '5m': 5, '15m': 15, '30m': 30, 
+            '1h': 60, '4h': 240, '1d': 1440
+        }
+        
+        minutes_per_candle = interval_minutes.get(interval, 60)
+        candles_needed = int((hours_elapsed * 60) / minutes_per_candle)
+        
+        # Ensure reasonable bounds
+        return max(1, min(candles_needed, 1000))  # Binance API limit
+    
+    def _get_session_period_name(self, timeframe: str) -> str:
+        """Get session-based period name for display"""
+        session_start = self._get_session_start_time(timeframe)
+        
+        hours_elapsed = (datetime.now(timezone.utc) - session_start).total_seconds() / 3600
+        return f"Since {session_start.strftime('%Y-%m-%d 00:00 UTC')} ({hours_elapsed:.1f}h session)"
+    
     async def calculate_all_profiles(self, symbol: str, exchange: str = "binance") -> Dict[str, Any]:
         """
         Main entry point - calculates profiles for all timeframes
@@ -105,8 +148,8 @@ class ProfileCalculator:
             # Fetch current price first
             current_price = await self._get_current_price(binance_symbol)
             
-            # Fetch all candle data in parallel
-            candle_data = await self._fetch_all_candles(binance_symbol)
+            # Fetch session-based candle data for each timeframe
+            candle_data = await self._fetch_all_session_candles(binance_symbol)
             
             # Calculate profiles for each timeframe
             profiles = {
@@ -128,21 +171,15 @@ class ProfileCalculator:
                         timeframe=timeframe
                     )
                     
-                    # Calculate VWAP with trading-optimized periods
-                    tf_config = self.TIMEFRAME_CONFIG[timeframe]
-                    vwap_candles = await self._fetch_vwap_candles(
-                        binance_symbol, 
-                        tf_config['interval'], 
-                        self.VWAP_PERIODS.get(timeframe, 50)
-                    )
-                    vwap = self.calculate_vwap(vwap_candles)
+                    # Calculate VWAP using same session data as Volume Profile
+                    vwap = self.calculate_vwap(candles)
                     
                     profiles[timeframe] = {
                         'volume_profile': vp,
                         'tpo': tpo,
                         'vwap': vwap,
                         'candles': len(candles),
-                        'period': self.TIMEFRAME_CONFIG[timeframe]['period_name']
+                        'period': self._get_session_period_name(timeframe)
                     }
             
             return {
@@ -167,6 +204,34 @@ class ProfileCalculator:
             
             data = await response.json()
             return float(data['price'])
+    
+    async def _fetch_all_session_candles(self, symbol: str) -> Dict[str, List[Candle]]:
+        """Fetch session-based candles for all timeframes - TradingView compatible"""
+        tasks = {}
+        
+        for timeframe, config in self.TIMEFRAME_CONFIG.items():
+            # Get session start time for this timeframe
+            session_start = self._get_session_start_time(timeframe)
+            candles_needed = self._calculate_session_candles(config['interval'], session_start)
+            
+            logger.info(f"Timeframe {timeframe}: Session start {session_start.strftime('%Y-%m-%d %H:%M UTC')}, "
+                       f"candles needed: {candles_needed}")
+            
+            task = self._fetch_candles(symbol, config['interval'], candles_needed)
+            tasks[timeframe] = task
+        
+        # Execute all fetches in parallel
+        results = await asyncio.gather(*tasks.values(), return_exceptions=True)
+        
+        candle_data = {}
+        for timeframe, result in zip(tasks.keys(), results):
+            if isinstance(result, Exception):
+                logger.error(f"Error fetching {timeframe} candles: {result}")
+                candle_data[timeframe] = []
+            else:
+                candle_data[timeframe] = result
+        
+        return candle_data
     
     async def _fetch_all_candles(self, symbol: str) -> Dict[str, List[Candle]]:
         """Fetch candles for all timeframes in parallel"""
