@@ -572,7 +572,9 @@ class TelegramBot:
             # Add session-based context (matches TradingView)
             tf_periods = {'1m': 'Session', '15m': 'Session', '30m': 'Session', '1h': 'Session', '4h': 'Session', '1d': 'Daily'}
             period_label = tf_periods.get(tf, '?')
-            vwap_text = f"VWAP ({period_label}): ${vwap:,.0f} {vwap_arrow} ({vwap_distance:+.1f}%)"
+            # Truncate to 2 decimal places (don't round)
+            vwap_distance_truncated = int(vwap_distance * 100) / 100
+            vwap_text = f"VWAP ({period_label}): ${vwap:,.0f} {vwap_arrow} ({vwap_distance_truncated:+.2f}%)"
             
             # Create price levels list for smart ordering
             levels = [
