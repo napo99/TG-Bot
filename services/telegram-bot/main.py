@@ -926,10 +926,7 @@ CVD shows cumulative market sentiment
             return
         
         symbol = context.args[0].upper()
-        # Normalize symbol format
-        if '/' not in symbol and '-' not in symbol:
-            symbol = f"{symbol}/USDT"
-        symbol = symbol.replace('-', '/')
+        # Keep symbol as-is for comprehensive analysis (API expects raw format like BTCUSDT)
         
         timeframe = context.args[1] if len(context.args) > 1 else '15m'
         
