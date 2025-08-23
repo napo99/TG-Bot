@@ -192,6 +192,7 @@ class TelegramBot:
         self.liquidation_monitor = None
         self.oi_monitor = None
         self.application = None  # Set by main function
+        self.market_data_url = os.getenv('MARKET_DATA_URL', 'http://localhost:8001')
     
     def _is_authorized(self, user_id: str) -> bool:
         return str(user_id) in self.authorized_users or len(self.authorized_users) == 0
@@ -1457,9 +1458,9 @@ CVD shows cumulative market sentiment
         try:
             # Initialize monitors if not exists
             if not self.liquidation_monitor:
-                self.liquidation_monitor = LiquidationMonitor(self)
+                self.liquidation_monitor = LiquidationMonitor(self, self.market_data_url)
             if not self.oi_monitor:
-                self.oi_monitor = OIMonitor(self)
+                self.oi_monitor = OIMonitor(self, self.market_data_url)
             
             # Start monitoring
             asyncio.create_task(self.liquidation_monitor.start_monitoring())
@@ -1608,13 +1609,21 @@ def main():
     # Add error handler
     application.add_error_handler(bot.error_handler)
     
-    # Setup bot commands on startup
+    # Setup bot commands and auto-start monitoring on startup
     async def post_init(application):
         await setup_bot_commands(application)
+        # Auto-start proactive monitoring by default (as per PRD Phase 1)
+        try:
+            logger.info("Auto-starting proactive monitoring...")
+            await bot._start_monitoring()
+            logger.info("Proactive monitoring started successfully")
+        except Exception as e:
+            logger.error(f"Failed to auto-start monitoring: {e}")
     
     application.post_init = post_init
     
     logger.info("Starting Telegram bot...")
+    
     
     # Run the bot using the standard method
     application.run_polling(drop_pending_updates=True)

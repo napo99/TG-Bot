@@ -10,6 +10,9 @@ from datetime import datetime, timedelta
 import aiohttp
 import os
 from dataclasses import dataclass
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+from shared.intelligence.dynamic_thresholds import DynamicThresholdEngine, OIThreshold
 
 
 @dataclass
@@ -22,20 +25,48 @@ class OISnapshot:
 
 
 class OITracker:
-    """Tracks OI changes and detects explosions"""
+    """Tracks OI changes and detects explosions with dynamic thresholds"""
     
-    def __init__(self):
+    def __init__(self, market_data_url: str = "http://localhost:8001"):
         self.snapshots: Dict[str, List[OISnapshot]] = {}  # symbol -> snapshots
-        self.thresholds = {
+        self.threshold_engine = DynamicThresholdEngine(market_data_url=market_data_url)
+        self.threshold_cache: Dict[str, OIThreshold] = {}
+        
+        # Fallback hardcoded thresholds (used if dynamic calculation fails)
+        self.fallback_thresholds = {
             'BTC': {'change_pct': 15.0, 'min_oi': 50_000_000},
             'ETH': {'change_pct': 18.0, 'min_oi': 25_000_000},
             'SOL': {'change_pct': 25.0, 'min_oi': 10_000_000},
             'default': {'change_pct': 30.0, 'min_oi': 5_000_000}
         }
-        self.window_minutes = 15  # Detection window
+        # Dynamic settings will be calculated per symbol
         self.min_exchanges = 2    # Minimum exchanges for confirmation
     
-    def add_snapshot(self, snapshot: OISnapshot) -> Optional[str]:
+    async def _get_oi_threshold(self, symbol: str) -> OIThreshold:
+        """Get OI threshold with caching"""
+        # Check cache first (simple 1-hour TTL)
+        if symbol in self.threshold_cache:
+            return self.threshold_cache[symbol]
+        
+        try:
+            # Calculate new threshold
+            threshold_result = await self.threshold_engine.calculate_oi_threshold(symbol)
+            self.threshold_cache[symbol] = threshold_result
+            return threshold_result
+        except Exception as e:
+            logging.error(f"Error calculating OI threshold for {symbol}: {e}")
+            # Fallback to hardcoded thresholds
+            base_symbol = symbol.replace('-USDT', '').replace('-', '').replace('USDT', '')
+            fallback = self.fallback_thresholds.get(base_symbol, self.fallback_thresholds['default'])
+            return OIThreshold(
+                oi_change_threshold_pct=fallback['change_pct'] / 100,
+                minimum_oi_usd=fallback['min_oi'],
+                time_window_minutes=15,
+                cross_exchange_confirmation_required=True,
+                maturity_adjustment=1.0
+            )
+    
+    async def add_snapshot(self, snapshot: OISnapshot) -> Optional[str]:
         """Add OI snapshot and check for explosions"""
         symbol_key = snapshot.symbol
         
@@ -53,17 +84,30 @@ class OITracker:
         ]
         
         # Check for explosion
-        return self._check_explosion(symbol_key)
+        return await self._check_explosion(symbol_key)
     
-    def _check_explosion(self, symbol: str) -> Optional[str]:
+    async def _check_explosion(self, symbol: str) -> Optional[str]:
         """Check for OI explosion"""
         snapshots = self.snapshots.get(symbol, [])
         if len(snapshots) < 2:
             return None
         
+        # Get dynamic threshold settings
+        try:
+            oi_threshold = await self._get_oi_threshold(symbol)
+            window_minutes = oi_threshold.time_window_minutes
+            change_threshold_pct = oi_threshold.oi_change_threshold_pct * 100  # Convert to percentage
+            min_oi_usd = oi_threshold.minimum_oi_usd
+        except Exception as e:
+            logging.error(f"Error getting OI thresholds for {symbol}: {e}")
+            # Fallback values
+            window_minutes = 15
+            change_threshold_pct = 20.0
+            min_oi_usd = 10_000_000
+        
         # Get snapshots from detection window
         now = datetime.now()
-        window_start = now - timedelta(minutes=self.window_minutes)
+        window_start = now - timedelta(minutes=window_minutes)
         
         recent_snapshots = [s for s in snapshots if s.timestamp >= window_start]
         if len(recent_snapshots) < 2:
@@ -89,12 +133,9 @@ class OITracker:
             if oldest.oi_usd > 0:
                 change_pct = ((newest.oi_usd - oldest.oi_usd) / oldest.oi_usd) * 100
                 
-                # Get thresholds for this symbol
-                symbol_base = symbol.replace('USDT', '').replace('USDC', '')
-                thresholds = self.thresholds.get(symbol_base, self.thresholds['default'])
-                
-                if (abs(change_pct) >= thresholds['change_pct'] and 
-                    newest.oi_usd >= thresholds['min_oi']):
+                # Check against dynamic thresholds
+                if (abs(change_pct) >= change_threshold_pct and 
+                    newest.oi_usd >= min_oi_usd):
                     exploding_exchanges.append({
                         'exchange': exchange,
                         'change_pct': change_pct,
@@ -134,9 +175,9 @@ class OITracker:
 class OIMonitor:
     """OI explosion monitor for the telegram bot"""
     
-    def __init__(self, bot_instance):
+    def __init__(self, bot_instance, market_data_url: str = "http://localhost:8001"):
         self.bot = bot_instance
-        self.tracker = OITracker()
+        self.tracker = OITracker(market_data_url)
         self.running = False
         self.monitoring_task = None
         self.logger = logging.getLogger(__name__)
@@ -208,8 +249,8 @@ class OIMonitor:
                         timestamp=timestamp
                     )
                     
-                    # Check for explosion
-                    alert_message = self.tracker.add_snapshot(snapshot)
+                    # Check for explosion (now async)
+                    alert_message = await self.tracker.add_snapshot(snapshot)
                     if alert_message:
                         await self._send_alert(alert_message)
                         
