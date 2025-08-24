@@ -13,6 +13,7 @@ from dataclasses import dataclass
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 from shared.intelligence.dynamic_thresholds import DynamicThresholdEngine, OIThreshold
+from formatting_utils import format_dollar_amount, format_large_number
 
 
 @dataclass
@@ -179,12 +180,12 @@ class OITracker:
             funding_impact = "Funding rates likely to fall"
         
         message = (f"{magnitude} OI {direction_word} - {symbol_clean}\n"
-                  f"{direction_emoji} **{avg_change:+.1f}%** change in 15min | **${oi_change_usd:,.0f}** net flow\n"
-                  f"💰 **Total OI**: ${total_oi:,.0f}\n"
-                  f"🏦 **Lead Exchange**: {largest_exchange['exchange']} ({largest_exchange['change_pct']:+.1f}%)\n"
-                  f"🎯 **Market Impact**: {implication}\n"
-                  f"⚡ **Funding**: {funding_impact}\n"
-                  f"🏦 **Classification**: {'Institutional flow' if abs(oi_change_usd) > 50_000_000 else 'Large trader activity'}")
+                  f"{direction_emoji} **{avg_change:+.1f}%** in 15min | **{format_dollar_amount(abs(oi_change_usd), 1)}** flow\n"
+                  f"💰 **Total OI**: {format_dollar_amount(total_oi, 1)}\n"
+                  f"🏦 **Lead**: {largest_exchange['exchange']} ({largest_exchange['change_pct']:+.1f}%)\n"
+                  f"🎯 {implication}\n"
+                  f"⚡ {funding_impact}\n"
+                  f"🏦 {'Institutional flow' if abs(oi_change_usd) > 50_000_000 else 'Large trader activity'}")
         
         return message
 

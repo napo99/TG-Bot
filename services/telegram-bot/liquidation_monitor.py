@@ -12,6 +12,7 @@ from datetime import datetime
 import os
 from dataclasses import dataclass
 from shared.intelligence.dynamic_thresholds import DynamicThresholdEngine, ThresholdResult
+from formatting_utils import format_dollar_amount, format_large_number
 
 
 @dataclass
@@ -43,12 +44,11 @@ class Liquidation:
         leverage_estimate = "~3-5x" if self.value_usd > 500_000 else "~10-20x"
         
         return (f"🚨 **{symbol_clean} LIQUIDATION - {size_class}**\n"
-                f"{side_emoji} **{self.side}** position liquidated\n"
-                f"💰 **Value**: ${self.value_usd:,.0f}\n"
-                f"📊 **Position**: {self.quantity:.2f} @ ${self.price:,.2f}\n"
-                f"⚡ **Est. Leverage**: {leverage_estimate}\n"
-                f"🎯 **Impact**: {'HIGH' if self.value_usd > 500_000 else 'MEDIUM'} - Watch for cascade\n"
-                f"🕐 **Time**: {self.timestamp.strftime('%H:%M:%S')}")
+                f"{side_emoji} **{self.side}** liquidated\n"
+                f"💰 **{format_dollar_amount(self.value_usd, 1)}** ({self.quantity:.2f} {symbol_clean})\n"
+                f"📊 **Price**: ${self.price:,.2f} | **Leverage**: {leverage_estimate}\n"
+                f"🎯 **Impact**: {'HIGH' if self.value_usd > 500_000 else 'MEDIUM'} - Watch cascade\n"
+                f"🕐 {self.timestamp.strftime('%H:%M:%S')}")
 
 
 class LiquidationTracker:
@@ -162,12 +162,16 @@ class LiquidationTracker:
                 # Estimate cascade probability (simple heuristic)
                 cascade_risk = "HIGH" if long_count > short_count * 2 else "MEDIUM"
                 
+                # Calculate total coin amount
+                total_coins = sum(liq.quantity for liq in largest_group)
+                
                 return (f"{severity} CASCADE - {symbol_clean}\n"
-                       f"⚡ **{len(largest_group)} liquidations** in 30s window\n"
-                       f"💰 **Total**: ${total_value:,.0f} | Avg: ${avg_size:,.0f} | Max: ${max_single:,.0f}\n"
-                       f"📊 **Bias**: {long_bias_pct:.0f}% LONG vs {100-long_bias_pct:.0f}% SHORT\n"
-                       f"🎯 **Cascade Risk**: {cascade_risk} - Next 2-5 minutes critical\n"
-                       f"🏦 **Classification**: {'Institutional deleveraging' if avg_size > 200_000 else 'Retail panic'}")
+                       f"⚡ **{len(largest_group)} liquidations** in 30s\n"
+                       f"💰 **{format_dollar_amount(total_value, 1)}** ({total_coins:.1f} {symbol_clean})\n"
+                       f"📊 **Avg**: {format_dollar_amount(avg_size, 1)} | **Max**: {format_dollar_amount(max_single, 1)}\n"
+                       f"⚖️ **{long_bias_pct:.0f}% LONG** vs {100-long_bias_pct:.0f}% SHORT\n"
+                       f"🎯 **Risk**: {cascade_risk} - Next 2-5min critical\n"
+                       f"🏦 {'Institutional deleveraging' if avg_size > 200_000 else 'Retail panic'}")
         
         return None
 
