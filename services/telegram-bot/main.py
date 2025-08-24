@@ -271,10 +271,20 @@ class TelegramBot:
         symbol = context.args[0].upper().replace('/', '-')
         await update.message.reply_text(f"⏳ Fetching enhanced data for {symbol}...")
         
-        result = await self.market_client.get_combined_price(symbol)
+        try:
+            result = await self.market_client.get_combined_price(symbol)
+        except Exception as e:
+            logger.error(f"Error fetching price for {symbol}: {e}")
+            await update.message.reply_text(f"❌ Error fetching price data: Network timeout or service unavailable")
+            return
         
         if result['success']:
             data = result['data']
+            # Validate required fields in response
+            if not data or 'base_symbol' not in data:
+                await update.message.reply_text(f"❌ Error: Malformed response from server for {symbol}")
+                return
+            
             base_symbol = data['base_symbol']
             base_token = base_symbol.split('/')[0]
             
