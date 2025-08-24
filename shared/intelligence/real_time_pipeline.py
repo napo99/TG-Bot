@@ -205,7 +205,7 @@ class VolumeIntelligenceProcessor(StreamProcessor):
                 return
             
             # Get dynamic thresholds
-            thresholds = await self.intelligence_engine.threshold_engine.calculate_volume_threshold(symbol)
+            thresholds = await self.intelligence_engine.calculate_volume_threshold(symbol)
             windows = self.volume_windows[symbol]
             
             # Check 15-minute window for spikes
