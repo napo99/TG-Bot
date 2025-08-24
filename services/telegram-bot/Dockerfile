@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y \
     && useradd --create-home --shell /bin/bash --uid 1000 app
 
 # Copy requirements first for better caching
-COPY requirements.txt .
+COPY services/telegram-bot/requirements.txt .
 
 # Install Python dependencies with optimizations
 RUN pip install --no-cache-dir --upgrade pip \
@@ -20,8 +20,11 @@ RUN pip install --no-cache-dir --upgrade pip \
     && find /usr/local -name "*.pyc" -delete \
     && find /usr/local -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 
-# Copy application code and set ownership
-COPY --chown=app:app . .
+# Copy shared modules first (they're dependencies)
+COPY --chown=app:app shared/ ./shared/
+
+# Copy telegram bot application code
+COPY --chown=app:app services/telegram-bot/ .
 
 # Switch to non-root user
 USER app

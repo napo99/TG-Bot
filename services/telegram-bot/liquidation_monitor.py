@@ -11,8 +11,6 @@ from typing import Optional, Dict, List
 from datetime import datetime
 import os
 from dataclasses import dataclass
-import sys
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 from shared.intelligence.dynamic_thresholds import DynamicThresholdEngine, ThresholdResult
 
 
