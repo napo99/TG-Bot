@@ -25,12 +25,29 @@ class Liquidation:
     timestamp: datetime
     
     def format_alert(self) -> str:
-        """Format liquidation as alert message"""
+        """Format institutional-grade liquidation alert with context"""
         side_emoji = "📉" if self.side == "LONG" else "📈"
-        return (f"🚨 **{self.symbol} LIQUIDATION**\n"
+        symbol_clean = self.symbol.replace('USDT', '').replace('USDC', '')
+        
+        # Determine size classification for institutional context
+        if self.value_usd >= 1_000_000:
+            size_class = "🐋 WHALE"
+        elif self.value_usd >= 500_000:
+            size_class = "🦈 INSTITUTIONAL"  
+        elif self.value_usd >= 100_000:
+            size_class = "🐟 LARGE TRADER"
+        else:
+            size_class = "📊 TRADER"
+            
+        # Calculate market impact indicator
+        leverage_estimate = "~3-5x" if self.value_usd > 500_000 else "~10-20x"
+        
+        return (f"🚨 **{symbol_clean} LIQUIDATION - {size_class}**\n"
                 f"{side_emoji} **{self.side}** position liquidated\n"
                 f"💰 **Value**: ${self.value_usd:,.0f}\n"
-                f"📊 **Size**: {self.quantity:.4f} @ ${self.price:,.2f}\n"
+                f"📊 **Position**: {self.quantity:.2f} @ ${self.price:,.2f}\n"
+                f"⚡ **Est. Leverage**: {leverage_estimate}\n"
+                f"🎯 **Impact**: {'HIGH' if self.value_usd > 500_000 else 'MEDIUM'} - Watch for cascade\n"
                 f"🕐 **Time**: {self.timestamp.strftime('%H:%M:%S')}")
 
 
@@ -43,12 +60,12 @@ class LiquidationTracker:
         self.threshold_cache: Dict[str, ThresholdResult] = {}
         self.cascade_window = 30  # 30 seconds
         
-        # Fallback hardcoded thresholds (used if dynamic calculation fails)
+        # INSTITUTIONAL THRESHOLDS - Eliminate retail noise
         self.fallback_thresholds = {
-            'BTC': 100000,  # $100k+ for BTC
-            'ETH': 50000,   # $50k+ for ETH  
-            'SOL': 25000,   # $25k+ for SOL
-            'default': 10000  # $10k+ for others
+            'BTC': 500000,  # $500k+ for BTC (5x increase) 
+            'ETH': 250000,  # $250k+ for ETH (5x increase)
+            'SOL': 100000,  # $100k+ for SOL (4x increase)
+            'default': 50000  # $50k+ for others (5x increase)
         }
     
     async def _get_threshold(self, symbol: str) -> ThresholdResult:
@@ -128,11 +145,29 @@ class LiquidationTracker:
                 long_count = sum(1 for liq in largest_group if liq.side == 'LONG')
                 short_count = len(largest_group) - long_count
                 
-                return (f"🚨 **{symbol} LIQUIDATION CASCADE**\n"
-                       f"⚡ **{len(largest_group)} liquidations** in 30 seconds\n"
-                       f"💰 **Total**: ${total_value:,.0f}\n"
-                       f"📊 **Breakdown**: {long_count} longs, {short_count} shorts\n"
-                       f"⚠️ **Potential price impact expected**")
+                # Enhanced institutional intelligence
+                symbol_clean = symbol.replace('USDT', '').replace('USDC', '')
+                avg_size = total_value / len(largest_group)
+                max_single = max(liq.value_usd for liq in largest_group)
+                long_bias_pct = (long_count / len(largest_group)) * 100
+                
+                # Classify cascade severity
+                if total_value >= 10_000_000:  # $10M+
+                    severity = "🚨 TIER-1 INSTITUTIONAL"
+                elif total_value >= 5_000_000:  # $5M+
+                    severity = "⚡ TIER-2 MAJOR"
+                else:
+                    severity = "📊 TIER-3 SIGNIFICANT"
+                
+                # Estimate cascade probability (simple heuristic)
+                cascade_risk = "HIGH" if long_count > short_count * 2 else "MEDIUM"
+                
+                return (f"{severity} CASCADE - {symbol_clean}\n"
+                       f"⚡ **{len(largest_group)} liquidations** in 30s window\n"
+                       f"💰 **Total**: ${total_value:,.0f} | Avg: ${avg_size:,.0f} | Max: ${max_single:,.0f}\n"
+                       f"📊 **Bias**: {long_bias_pct:.0f}% LONG vs {100-long_bias_pct:.0f}% SHORT\n"
+                       f"🎯 **Cascade Risk**: {cascade_risk} - Next 2-5 minutes critical\n"
+                       f"🏦 **Classification**: {'Institutional deleveraging' if avg_size > 200_000 else 'Retail panic'}")
         
         return None
 

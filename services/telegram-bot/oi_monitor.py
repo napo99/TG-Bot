@@ -150,24 +150,41 @@ class OITracker:
         return None
     
     def _format_explosion_alert(self, symbol: str, explosions: List[Dict]) -> str:
-        """Format OI explosion alert"""
+        """Format institutional-grade OI explosion alert with context"""
         avg_change = sum(e['change_pct'] for e in explosions) / len(explosions)
         total_oi = sum(e['new_oi'] for e in explosions)
         
         direction_emoji = "📈" if avg_change > 0 else "📉"
         direction_word = "EXPLOSION" if avg_change > 0 else "COLLAPSE"
-        
         symbol_clean = symbol.replace('USDT', '').replace('USDC', '')
         
-        message = (f"🚨 **{symbol_clean} OI {direction_word}**\n"
-                  f"{direction_emoji} **{avg_change:+.1f}%** change in 15 minutes\n"
-                  f"💰 **Total OI**: ${total_oi:,.0f}\n"
-                  f"🏦 **{len(explosions)}/{len(explosions)} exchanges** confirming\n")
+        # Enhanced institutional intelligence
+        oi_change_usd = sum(e['new_oi'] - e['old_oi'] for e in explosions)
+        largest_exchange = max(explosions, key=lambda x: abs(x['change_pct']))
         
-        if abs(avg_change) > 20:
-            message += "⚡ **Institutional positioning detected**"
+        # Classify magnitude
+        if abs(avg_change) >= 30:
+            magnitude = "🚨 TIER-1 MASSIVE"
+        elif abs(avg_change) >= 20:
+            magnitude = "⚡ TIER-2 MAJOR"
         else:
-            message += "📊 **Significant position building activity**"
+            magnitude = "📊 TIER-3 SIGNIFICANT"
+        
+        # Market implications
+        if avg_change > 0:
+            implication = "📈 Bullish positioning - expect upward pressure"
+            funding_impact = "Funding rates likely to rise"
+        else:
+            implication = "📉 Bearish positioning - expect downward pressure"
+            funding_impact = "Funding rates likely to fall"
+        
+        message = (f"{magnitude} OI {direction_word} - {symbol_clean}\n"
+                  f"{direction_emoji} **{avg_change:+.1f}%** change in 15min | **${oi_change_usd:,.0f}** net flow\n"
+                  f"💰 **Total OI**: ${total_oi:,.0f}\n"
+                  f"🏦 **Lead Exchange**: {largest_exchange['exchange']} ({largest_exchange['change_pct']:+.1f}%)\n"
+                  f"🎯 **Market Impact**: {implication}\n"
+                  f"⚡ **Funding**: {funding_impact}\n"
+                  f"🏦 **Classification**: {'Institutional flow' if abs(oi_change_usd) > 50_000_000 else 'Large trader activity'}")
         
         return message
 
