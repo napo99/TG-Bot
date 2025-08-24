@@ -299,5 +299,5 @@ class OIMonitor:
             'symbols_monitored': len(self.symbols),
             'check_interval': self.check_interval,
             'total_snapshots': sum(len(snapshots) for snapshots in self.tracker.snapshots.values()),
-            'thresholds': self.tracker.thresholds
+            'threshold_cache_size': len(getattr(self.tracker, 'threshold_cache', {}))
         }

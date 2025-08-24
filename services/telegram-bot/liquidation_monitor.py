@@ -257,5 +257,5 @@ class LiquidationMonitor:
             'running': self.running,
             'connected': self.websocket is not None,
             'total_tracked': len(self.tracker.recent_liquidations),
-            'thresholds': self.tracker.thresholds
+            'threshold_cache_size': len(getattr(self.tracker, 'threshold_cache', {}))
         }
