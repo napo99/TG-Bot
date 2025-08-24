@@ -81,6 +81,9 @@ class UnifiedOIAggregator:
             if isinstance(result, Exception):
                 failed_exchanges[exchange] = str(result)
                 logger.error(f"❌ {exchange.title()} failed: {result}")
+            elif result is None:
+                failed_exchanges[exchange] = "Provider returned None"
+                logger.error(f"❌ {exchange.title()} returned None instead of result object")
             elif result.validation_passed:
                 successful_exchanges[exchange] = result
                 logger.info(f"✅ {exchange.title()}: {result.total_oi_tokens:,.0f} {base_symbol} (${result.total_oi_usd/1e9:.1f}B)")

@@ -283,7 +283,7 @@ class OIMonitor:
             
             async with self.session.post(
                 f"{self.market_data_url}/multi_oi",
-                json={'symbol': symbol},
+                json={'base_symbol': symbol},
                 timeout=10
             ) as response:
                 if response.status == 200:
