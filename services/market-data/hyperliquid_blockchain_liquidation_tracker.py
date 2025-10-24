@@ -77,11 +77,24 @@ class HyperliquidBlockchainLiquidationTracker:
         self.last_processed_block = 0
         self.liquidations: List[BlockchainLiquidation] = []
 
-        # Statistics
+        # Statistics - Basic counts
         self.total_liquidations = 0
         self.total_value_usd = 0.0
         self.liquidations_by_coin: Dict[str, int] = {}
         self.liquidations_by_user: Dict[str, int] = {}
+
+        # Statistics - Side tracking
+        self.long_liquidations = 0
+        self.short_liquidations = 0
+        self.long_liquidations_usd = 0.0
+        self.short_liquidations_usd = 0.0
+
+        # Statistics - Detailed by coin and side
+        self.liquidations_by_coin_side: Dict[str, Dict[str, int]] = {}  # {"BTC": {"LONG": 5, "SHORT": 3}}
+        self.volume_by_coin_side: Dict[str, Dict[str, float]] = {}  # {"BTC": {"LONG": 1000000, "SHORT": 500000}}
+
+        # Statistics - User details
+        self.user_liquidation_details: Dict[str, Dict] = {}  # {user_addr: {count, total_usd, coins, sides}}
 
         logger.info(f"🔗 Hyperliquid Blockchain Liquidation Tracker initialized")
         logger.info(f"   HLP Liquidator: {HLP_LIQUIDATOR_ADDRESS}")
@@ -97,6 +110,66 @@ class HyperliquidBlockchainLiquidationTracker:
         """Close HTTP session"""
         if self.session and not self.session.closed:
             await self.session.close()
+
+    def _update_statistics(self, liquidation: BlockchainLiquidation):
+        """
+        Update all aggregated statistics for a liquidation
+
+        Args:
+            liquidation: BlockchainLiquidation to record
+        """
+        # Basic totals
+        self.total_liquidations += 1
+        self.total_value_usd += liquidation.value_usd
+
+        # By coin
+        coin = liquidation.coin
+        self.liquidations_by_coin[coin] = self.liquidations_by_coin.get(coin, 0) + 1
+
+        # By side
+        side = liquidation.liquidation_side
+        if side == "LONG":
+            self.long_liquidations += 1
+            self.long_liquidations_usd += liquidation.value_usd
+        else:  # SHORT
+            self.short_liquidations += 1
+            self.short_liquidations_usd += liquidation.value_usd
+
+        # By coin and side
+        if coin not in self.liquidations_by_coin_side:
+            self.liquidations_by_coin_side[coin] = {"LONG": 0, "SHORT": 0}
+        if coin not in self.volume_by_coin_side:
+            self.volume_by_coin_side[coin] = {"LONG": 0.0, "SHORT": 0.0}
+
+        self.liquidations_by_coin_side[coin][side] += 1
+        self.volume_by_coin_side[coin][side] += liquidation.value_usd
+
+        # By user
+        user = liquidation.liquidated_user
+        self.liquidations_by_user[user] = self.liquidations_by_user.get(user, 0) + 1
+
+        # Detailed user stats
+        if user not in self.user_liquidation_details:
+            self.user_liquidation_details[user] = {
+                "count": 0,
+                "total_usd": 0.0,
+                "coins": set(),
+                "long_count": 0,
+                "short_count": 0,
+                "first_seen": liquidation.timestamp,
+                "last_seen": liquidation.timestamp
+            }
+
+        user_details = self.user_liquidation_details[user]
+        user_details["count"] += 1
+        user_details["total_usd"] += liquidation.value_usd
+        user_details["coins"].add(coin)
+        user_details["last_seen"] = max(user_details["last_seen"], liquidation.timestamp)
+
+        if side == "LONG":
+            user_details["long_count"] += 1
+        else:
+            user_details["short_count"] += 1
 
     async def query_recent_trades(self, coin: str, limit: int = 2000) -> List[dict]:
         """
@@ -296,12 +369,8 @@ class HyperliquidBlockchainLiquidationTracker:
                             liquidation = self.parse_liquidation(trade)
                             all_liquidations.append(liquidation)
 
-                            # Update statistics
-                            self.total_liquidations += 1
-                            self.total_value_usd += liquidation.value_usd
-                            self.liquidations_by_coin[coin] = self.liquidations_by_coin.get(coin, 0) + 1
-                            self.liquidations_by_user[liquidation.liquidated_user] = \
-                                self.liquidations_by_user.get(liquidation.liquidated_user, 0) + 1
+                            # Update all statistics
+                            self._update_statistics(liquidation)
 
                         except Exception as e:
                             logger.error(f"Error parsing liquidation: {e}")
@@ -362,12 +431,9 @@ class HyperliquidBlockchainLiquidationTracker:
                                 f"User: {liquidation.liquidated_user[:10]}..."
                             )
 
-                            # Store and update stats
+                            # Store and update all statistics
                             self.liquidations.append(liquidation)
-                            self.total_liquidations += 1
-                            self.total_value_usd += liquidation.value_usd
-                            self.liquidations_by_coin[liquidation.coin] = \
-                                self.liquidations_by_coin.get(liquidation.coin, 0) + 1
+                            self._update_statistics(liquidation)
 
                             # Yield liquidation for processing
                             yield liquidation
@@ -379,12 +445,67 @@ class HyperliquidBlockchainLiquidationTracker:
                 await asyncio.sleep(interval)
 
     def get_statistics(self) -> dict:
-        """Get aggregated liquidation statistics"""
+        """
+        Get comprehensive aggregated liquidation statistics
+
+        Returns:
+            Dict with all aggregated metrics including:
+            - Totals (count, USD volume)
+            - By side (long vs short)
+            - By coin
+            - By coin and side
+            - User statistics
+        """
+        # Calculate additional metrics
+        avg_liquidation_size = self.total_value_usd / self.total_liquidations if self.total_liquidations > 0 else 0
+
+        # Get top liquidated users
+        top_users = sorted(
+            [
+                {
+                    "address": addr,
+                    "count": details["count"],
+                    "total_usd": details["total_usd"],
+                    "long_count": details["long_count"],
+                    "short_count": details["short_count"],
+                    "coins": list(details["coins"])
+                }
+                for addr, details in self.user_liquidation_details.items()
+            ],
+            key=lambda x: x["total_usd"],
+            reverse=True
+        )[:10]
+
+        # Long vs Short ratio
+        long_short_ratio = (
+            self.long_liquidations / self.short_liquidations
+            if self.short_liquidations > 0
+            else float('inf') if self.long_liquidations > 0 else 0
+        )
+
         return {
+            # Overall totals
             "total_liquidations": self.total_liquidations,
             "total_value_usd": self.total_value_usd,
-            "unique_users_liquidated": len(self.liquidations_by_user),
+            "average_liquidation_size_usd": avg_liquidation_size,
+
+            # By side
+            "long_liquidations": self.long_liquidations,
+            "short_liquidations": self.short_liquidations,
+            "long_liquidations_usd": self.long_liquidations_usd,
+            "short_liquidations_usd": self.short_liquidations_usd,
+            "long_short_ratio": long_short_ratio,
+
+            # By coin
             "liquidations_by_coin": self.liquidations_by_coin,
+            "liquidations_by_coin_side": self.liquidations_by_coin_side,
+            "volume_by_coin_side": self.volume_by_coin_side,
+
+            # User statistics
+            "unique_users_liquidated": len(self.liquidations_by_user),
+            "top_liquidated_users": top_users,
+
+            # Buffer info
             "recent_liquidations_count": len(self.liquidations),
         }
 
@@ -395,6 +516,59 @@ class HyperliquidBlockchainLiquidationTracker:
             key=lambda x: x.timestamp,
             reverse=True
         )[:limit]
+
+    def get_liquidations_by_timeframe(self, seconds: int) -> Dict:
+        """
+        Get aggregated liquidations within a time window
+
+        Args:
+            seconds: Time window in seconds (e.g., 3600 for last hour)
+
+        Returns:
+            Dict with aggregated stats for the timeframe
+        """
+        now = datetime.now().timestamp() * 1000  # Convert to ms
+        cutoff = now - (seconds * 1000)
+
+        # Filter liquidations within timeframe
+        recent = [liq for liq in self.liquidations if liq.timestamp >= cutoff]
+
+        if not recent:
+            return {
+                "count": 0,
+                "total_usd": 0,
+                "long_count": 0,
+                "short_count": 0,
+                "by_coin": {}
+            }
+
+        # Aggregate
+        total_usd = sum(liq.value_usd for liq in recent)
+        long_count = sum(1 for liq in recent if liq.liquidation_side == "LONG")
+        short_count = len(recent) - long_count
+
+        by_coin = {}
+        for liq in recent:
+            if liq.coin not in by_coin:
+                by_coin[liq.coin] = {"count": 0, "usd": 0, "long": 0, "short": 0}
+            by_coin[liq.coin]["count"] += 1
+            by_coin[liq.coin]["usd"] += liq.value_usd
+            if liq.liquidation_side == "LONG":
+                by_coin[liq.coin]["long"] += 1
+            else:
+                by_coin[liq.coin]["short"] += 1
+
+        return {
+            "timeframe_seconds": seconds,
+            "count": len(recent),
+            "total_usd": total_usd,
+            "long_count": long_count,
+            "short_count": short_count,
+            "long_usd": sum(liq.value_usd for liq in recent if liq.liquidation_side == "LONG"),
+            "short_usd": sum(liq.value_usd for liq in recent if liq.liquidation_side == "SHORT"),
+            "by_coin": by_coin,
+            "average_size": total_usd / len(recent) if recent else 0
+        }
 
 
 __all__ = ['HyperliquidBlockchainLiquidationTracker', 'BlockchainLiquidation']
