@@ -263,10 +263,14 @@ class HyperliquidLiquidationProvider:
                     "time": 1702000000000,
                     "hash": "0x...",
                     "tid": 12345678,
-                    "liquidation": true  # Only present if this is a liquidation
+                    "users": ["0x...", "0x..."]  # [buyer, seller]
                 }
             ]
         }
+
+        Liquidation Detection:
+        A trade is a liquidation if HLP Liquidator address is involved:
+        0x2e3d94f0562703b25c83308a05046ddaf9a8dd14
 
         Args:
             data: WebSocket message data
@@ -274,14 +278,23 @@ class HyperliquidLiquidationProvider:
         Returns:
             CompactLiquidation if this is a liquidation, None otherwise
         """
+        # HLP Liquidator address (official Hyperliquid liquidation bot)
+        LIQUIDATOR_ADDRESS = "0x2e3d94f0562703b25c83308a05046ddaf9a8dd14"
+
         try:
             trades = data.get('data', [])
 
             for trade in trades:
                 self.total_trade_count += 1
 
-                # Check if this trade is a liquidation
-                is_liquidation = trade.get('liquidation', False)
+                # Check if this trade involves the liquidator
+                users = trade.get('users', [])
+                if not users or len(users) < 2:
+                    continue
+
+                buyer, seller = users[0].lower(), users[1].lower()
+                is_liquidation = (buyer == LIQUIDATOR_ADDRESS.lower() or
+                                seller == LIQUIDATOR_ADDRESS.lower())
 
                 if not is_liquidation:
                     continue
