@@ -32,7 +32,7 @@ class CompactLiquidation(NamedTuple):
     def from_binance_data(cls, data: dict) -> 'CompactLiquidation':
         """
         Create compact liquidation from Binance WebSocket data
-        
+
         Expected Binance format:
         {
             "o": {
@@ -43,27 +43,27 @@ class CompactLiquidation(NamedTuple):
                 "p": "43811.36",
                 "ap": "43811.36",
                 "X": "FILLED",
-                "l": "0.162", 
+                "l": "0.162",
                 "z": "0.162",
                 "T": 1640995200000
             }
         }
         """
         order = data.get('o', {})
-        
+
         # Extract values
         symbol = order.get('s', '')
         side_str = order.get('S', '')
         price = float(order.get('ap', 0))  # Average price
         quantity = float(order.get('z', 0))  # Filled quantity
         timestamp = int(order.get('T', 0)) // 1000  # Convert to seconds
-        
+
         # Calculate USD value
         value_usd = price * quantity
-        
+
         # Convert side (Binance uses opposite logic)
         side = LiquidationSide.LONG if side_str == 'SELL' else LiquidationSide.SHORT
-        
+
         # Create compact representation
         return cls(
             timestamp=timestamp,
@@ -71,6 +71,54 @@ class CompactLiquidation(NamedTuple):
             side=side.value,
             price=int(price * 100),  # Store with 2 decimal precision
             quantity=int(quantity * 1000000),  # Store with 6 decimal precision
+            value_usd=int(value_usd / 1000)  # Store in thousands
+        )
+
+    @classmethod
+    def from_hyperliquid_data(cls, data: dict) -> 'CompactLiquidation':
+        """
+        Create compact liquidation from Hyperliquid WebSocket trade data
+
+        Expected Hyperliquid format:
+        {
+            "coin": "BTC",
+            "side": "B",  # B=Buy (short liquidation), A=Sell (long liquidation)
+            "px": "45000.5",
+            "sz": "0.5",
+            "time": 1702000000000,
+            "hash": "0x...",
+            "tid": 12345678,
+            "liquidation": true
+        }
+        """
+        # Extract values
+        coin = data.get('coin', '')
+        side_str = data.get('side', '')  # "B" or "A"
+        price = float(data.get('px', 0))
+        size = float(data.get('sz', 0))
+        timestamp_ms = int(data.get('time', 0))
+
+        # Convert to seconds
+        timestamp = timestamp_ms // 1000
+
+        # Calculate USD value
+        value_usd = price * size
+
+        # Convert side
+        # "A" (Ask/Sell) = long liquidation (forced sell of long position)
+        # "B" (Bid/Buy) = short liquidation (forced buy to close short position)
+        side = LiquidationSide.LONG if side_str == 'A' else LiquidationSide.SHORT
+
+        # Create symbol for Hyperliquid (e.g., "BTC-PERP")
+        symbol = f"{coin}-PERP"
+
+        # Create compact representation
+        return cls(
+            timestamp=timestamp,
+            symbol_hash=hash(symbol) & 0xFFFFFFFF,  # 4 bytes
+            side=side.value,
+            price=int(price * 100),  # Store with 2 decimal precision
+            quantity=int(size * 1000000),  # Store with 6 decimal precision
             value_usd=int(value_usd / 1000)  # Store in thousands
         )
     

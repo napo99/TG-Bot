@@ -66,11 +66,44 @@ ALERT_RATE_LIMITS = {
 # WebSocket Configuration
 WEBSOCKET_CONFIG = {
     "binance_liquidation_url": "wss://fstream.binance.com/ws/!forceOrder@arr",
+    "hyperliquid_ws_url": "wss://api.hyperliquid.xyz/ws",
     "reconnect_delays": [1, 2, 4, 8, 16],  # Exponential backoff seconds
     "max_reconnect_delay": 16,
     "ping_interval": 20,              # WebSocket ping interval
     "ping_timeout": 10,               # WebSocket ping timeout
     "close_timeout": 10               # WebSocket close timeout
+}
+
+# Hyperliquid Configuration
+HYPERLIQUID_CONFIG = {
+    "enabled": os.getenv("ENABLE_HYPERLIQUID_LIQUIDATION_ALERTS", "true").lower() == "true",
+    "api_base": "https://api.hyperliquid.xyz",
+    "ws_url": "wss://api.hyperliquid.xyz/ws",
+    "monitored_symbols": os.getenv("HYPERLIQUID_SYMBOLS", "BTC,ETH,SOL").split(","),
+    "api_timeout": 10,
+    "polling_interval": 5,  # seconds (used if WebSocket unavailable)
+    "thresholds": {
+        "BTC": {
+            "single_large": float(os.getenv("HYPERLIQUID_THRESHOLD_BTC", "100000")),
+            "cascade_count": 5,
+            "cascade_value": 500000
+        },
+        "ETH": {
+            "single_large": float(os.getenv("HYPERLIQUID_THRESHOLD_ETH", "50000")),
+            "cascade_count": 5,
+            "cascade_value": 250000
+        },
+        "SOL": {
+            "single_large": float(os.getenv("HYPERLIQUID_THRESHOLD_SOL", "25000")),
+            "cascade_count": 4,
+            "cascade_value": 100000
+        },
+        "default": {
+            "single_large": 10000,
+            "cascade_count": 3,
+            "cascade_value": 50000
+        }
+    }
 }
 
 # Monitoring Configuration
@@ -135,5 +168,7 @@ def get_environment_config() -> Dict[str, Any]:
         "enable_liquidation_alerts": os.getenv("ENABLE_LIQUIDATION_ALERTS", "true").lower() == "true",
         "enable_oi_alerts": os.getenv("ENABLE_OI_ALERTS", "true").lower() == "true",
         "alert_rate_limit_seconds": int(os.getenv("ALERT_RATE_LIMIT_SECONDS", "60")),
-        "market_data_url": os.getenv("MARKET_DATA_URL", "http://market-data:8001")
+        "market_data_url": os.getenv("MARKET_DATA_URL", "http://market-data:8001"),
+        "liquidation_exchanges": os.getenv("LIQUIDATION_EXCHANGES", "binance,hyperliquid").split(","),
+        "enable_hyperliquid": HYPERLIQUID_CONFIG["enabled"]
     }
