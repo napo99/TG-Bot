@@ -1,0 +1,148 @@
+# Docker Compose for Monitoring Services
+
+services:
+  liquidation-monitor:
+    build:
+      context: ../../services/monitoring
+      dockerfile: Dockerfile
+    container_name: crypto-liquidation-monitor
+    command: ["python", "liquidation_monitor.py"]
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - ENABLE_LIQUIDATION_ALERTS=${ENABLE_LIQUIDATION_ALERTS:-true}
+      - LIQUIDATION_THRESHOLD_BTC=${LIQUIDATION_THRESHOLD_BTC:-100000}
+      - LIQUIDATION_THRESHOLD_ETH=${LIQUIDATION_THRESHOLD_ETH:-50000}
+      - LIQUIDATION_THRESHOLD_SOL=${LIQUIDATION_THRESHOLD_SOL:-25000}
+      - MONITORING_LOG_LEVEL=${MONITORING_LOG_LEVEL:-INFO}
+    volumes:
+      - ../../shared/alerts:/app/shared/alerts
+      - monitoring_logs:/app/logs
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.3'
+          memory: 64M
+        reservations:
+          cpus: '0.1'
+          memory: 32M
+    networks:
+      - crypto-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; exit(0 if os.path.exists('/app/shared/alerts/liquidation_alerts.json') else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  oi-explosion-detector:
+    build:
+      context: ../../services/monitoring
+      dockerfile: Dockerfile
+    container_name: crypto-oi-detector
+    command: ["python", "oi_explosion_detector.py"]
+    environment:
+      - MARKET_DATA_URL=http://market-data:8001
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - ENABLE_OI_ALERTS=${ENABLE_OI_ALERTS:-true}
+      - OI_THRESHOLD_BTC=${OI_THRESHOLD_BTC:-15.0}
+      - OI_THRESHOLD_ETH=${OI_THRESHOLD_ETH:-18.0}
+      - OI_THRESHOLD_SOL=${OI_THRESHOLD_SOL:-25.0}
+      - MONITORING_LOG_LEVEL=${MONITORING_LOG_LEVEL:-INFO}
+    volumes:
+      - ../../shared/alerts:/app/shared/alerts
+      - monitoring_logs:/app/logs
+    # Note: Depends on market-data from main compose file
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.3'
+          memory: 48M
+        reservations:
+          cpus: '0.1'
+          memory: 24M
+    networks:
+      - crypto-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; exit(0 if os.path.exists('/app/shared/alerts/oi_alerts.json') else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  alert-dispatcher:
+    build:
+      context: ../../services/monitoring
+      dockerfile: Dockerfile
+    container_name: crypto-alert-dispatcher
+    command: ["python", "alert_dispatcher.py"]
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - ALERT_RATE_LIMIT_SECONDS=${ALERT_RATE_LIMIT_SECONDS:-60}
+      - MONITORING_LOG_LEVEL=${MONITORING_LOG_LEVEL:-INFO}
+    volumes:
+      - ../../shared/alerts:/app/shared/alerts
+      - ../../data:/app/data
+      - monitoring_logs:/app/logs
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 32M
+        reservations:
+          cpus: '0.05'
+          memory: 16M
+    networks:
+      - crypto-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sqlite3; conn = sqlite3.connect('/app/data/alerts.db'); conn.close(); exit(0)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  monitoring-coordinator:
+    build:
+      context: ../../services/monitoring
+      dockerfile: Dockerfile
+    container_name: crypto-monitoring-coordinator
+    command: ["python", "coordinator.py"]
+    environment:
+      - MONITORING_LOG_LEVEL=${MONITORING_LOG_LEVEL:-INFO}
+    volumes:
+      - monitoring_logs:/app/logs
+      - ../../shared:/app/shared
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8002:8002"  # Health monitoring endpoint
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: 16M
+        reservations:
+          cpus: '0.05'
+          memory: 8M
+    networks:
+      - crypto-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+# Use existing network from main docker-compose  
+networks:
+  crypto-network:
+    external: false
+    name: crypto-assistant_crypto-network
+
+volumes:
+  monitoring_logs:
