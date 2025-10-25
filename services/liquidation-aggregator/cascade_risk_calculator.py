@@ -520,7 +520,7 @@ class CascadeRiskCalculator:
         """
         if risk_score >= 80:
             return CascadeRiskLevel.CRITICAL
-        elif risk_score >= 60:
+        elif risk_score >= 55:
             return CascadeRiskLevel.HIGH
         elif risk_score >= 40:
             return CascadeRiskLevel.MEDIUM

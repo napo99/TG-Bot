@@ -54,7 +54,7 @@ async def example_basic():
     manager = EnhancedWebSocketManager(
         symbols=['BTCUSDT'],
         redis_host='localhost',
-        redis_port=6379,
+        redis_port=6380,
         redis_db=1
     )
 
@@ -150,7 +150,7 @@ async def example_multi_exchange():
     manager = EnhancedWebSocketManager(
         symbols=['BTCUSDT', 'ETHUSDT'],
         redis_host='localhost',
-        redis_port=6379
+        redis_port=6380
     )
 
     # Add CEX exchanges
@@ -272,7 +272,7 @@ async def example_redis_inspection():
         """Inspect Redis keys and values"""
         await asyncio.sleep(10)  # Let data accumulate
 
-        redis_client = await redis.Redis(host='localhost', port=6379, db=1)
+        redis_client = await redis.Redis(host='localhost', port=6380, db=1)
 
         try:
             while True:

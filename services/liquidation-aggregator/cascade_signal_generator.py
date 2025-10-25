@@ -64,7 +64,7 @@ from professional_cascade_detector import (
 
 # Redis configuration
 REDIS_HOST = 'localhost'
-REDIS_PORT = 6379
+REDIS_PORT = 6380
 REDIS_DB = 1
 
 # Redis channels
@@ -499,7 +499,7 @@ class CascadeSignalGenerator:
         scores['funding'] = safe_normalize(metrics.get('funding_rate', 0.0), 0.001, use_abs=True)
 
         # Volatility score (from risk multiplier, 0-5x range)
-        vol_multiplier = metrics.get('vol_risk_multiplier', 1.0)
+        vol_multiplier = metrics.get('vol_risk_multiplier', 0.0)
         scores['volatility'] = safe_normalize(vol_multiplier, 5.0, use_abs=False)
 
         return scores
@@ -538,8 +538,8 @@ class CascadeSignalGenerator:
         """
         # EXTREME: Multiple extreme conditions
         if (probability > SIGNAL_THRESHOLDS[CascadeSignal.EXTREME] or
-            (metrics.get('velocity', 0.0) > 100 and  # 100 events/s
-             abs(metrics.get('acceleration', 0.0)) > 40)):  # 40 events/s²
+            (metrics.get('velocity', 0.0) >= 100 and  # 100 events/s
+             abs(metrics.get('acceleration', 0.0)) >= 40)):  # 40 events/s²
             return SignalLevel.EXTREME
 
         # CRITICAL: High probability or combined extreme conditions

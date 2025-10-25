@@ -443,10 +443,12 @@ class MarketRegimeDetector:
             thresholds['volume_multiplier'] = 0.8
             thresholds['cascade_sensitivity'] = 1.2
 
-        # Apply volatility-specific adjustments
-        vol_adjustments = self.volatility_engine.get_signal_adjustment()
-        thresholds['velocity_multiplier'] *= vol_adjustments.get('velocity_threshold_multiplier', 1.0)
-        thresholds['volume_multiplier'] *= vol_adjustments.get('volume_threshold_multiplier', 1.0)
+        # Apply volatility-specific adjustments ONLY if we have sufficient volatility data
+        # This prevents default/empty volatility engine from incorrectly dampening regime-based thresholds
+        if hasattr(vol_metrics, 'vol_5min') and vol_metrics.vol_5min > 0:
+            vol_adjustments = self.volatility_engine.get_signal_adjustment()
+            thresholds['velocity_multiplier'] *= vol_adjustments.get('velocity_threshold_multiplier', 1.0)
+            thresholds['volume_multiplier'] *= vol_adjustments.get('volume_threshold_multiplier', 1.0)
 
         return thresholds
 

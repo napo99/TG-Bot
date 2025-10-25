@@ -1,20 +1,109 @@
 #!/usr/bin/env python3
 """
-HYPERLIQUID LIQUIDATION PROVIDER: Real-time liquidation tracking
+HYPERLIQUID LIQUIDATION PROVIDER - Production Grade with Enhanced Reliability
 Monitors liquidations on Hyperliquid DEX via WebSocket trades stream
+Enhanced with comprehensive error handling, retry logic, and health monitoring
+Author: Opus 4.1
+Date: October 25, 2025
 """
+
+from __future__ import annotations
 
 import asyncio
 import json
 import signal
+import sys
+import os
+import time
+import random
+import traceback
+from enum import Enum
+from dataclasses import dataclass, field
 import aiohttp
 import websockets
-from typing import Dict, List, Optional, Any, AsyncIterator
-from datetime import datetime
+from websockets.exceptions import WebSocketException, ConnectionClosedError, ConnectionClosedOK
+from typing import Dict, List, Optional, Any, AsyncIterator, Set, Tuple, Union, Final
+from datetime import datetime, timedelta
 from loguru import logger
+from functools import wraps
+from contextlib import asynccontextmanager
+
+# Add parent directories to path for shared models
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 
 from shared.models.compact_liquidation import CompactLiquidation, LiquidationSide
 
+# Configuration
+LIQUIDATOR_ADDRESS: Final[str] = "0x2e3d94f0562703b25c83308a05046ddaf9a8dd14"
+MAX_RECONNECT_ATTEMPTS: Final[int] = 10
+INITIAL_RECONNECT_DELAY: Final[float] = 1.0
+MAX_RECONNECT_DELAY: Final[float] = 60.0
+HEARTBEAT_INTERVAL: Final[int] = 30
+
+class ConnectionState(Enum):
+    """WebSocket connection states"""
+    DISCONNECTED = "disconnected"
+    CONNECTING = "connecting"
+    CONNECTED = "connected"
+    RECONNECTING = "reconnecting"
+    FAILED = "failed"
+    CLOSED = "closed"
+
+@dataclass
+class ConnectionHealth:
+    """Connection health metrics"""
+    state: ConnectionState = ConnectionState.DISCONNECTED
+    last_connected: Optional[datetime] = None
+    last_disconnected: Optional[datetime] = None
+    connection_attempts: int = 0
+    successful_connections: int = 0
+    failed_connections: int = 0
+    total_messages: int = 0
+    error_count: int = 0
+    last_error: Optional[str] = None
+    uptime_seconds: float = 0.0
+    last_message_time: Optional[datetime] = None
+
+    def update_connected(self) -> None:
+        """Update metrics on successful connection"""
+        self.state = ConnectionState.CONNECTED
+        self.last_connected = datetime.utcnow()
+        self.successful_connections += 1
+        self.connection_attempts += 1
+
+    def update_disconnected(self, error: Optional[str] = None) -> None:
+        """Update metrics on disconnection"""
+        self.state = ConnectionState.DISCONNECTED
+        self.last_disconnected = datetime.utcnow()
+        if error:
+            self.error_count += 1
+            self.last_error = error
+            self.failed_connections += 1
+        if self.last_connected:
+            self.uptime_seconds += (self.last_disconnected - self.last_connected).total_seconds()
+
+def retry_on_failure(max_retries: int = 3, backoff_factor: float = 2.0):
+    """Decorator for retry logic with exponential backoff"""
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            last_exception = None
+            for attempt in range(max_retries):
+                try:
+                    return await func(*args, **kwargs)
+                except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                    last_exception = e
+                    wait_time = min(backoff_factor ** attempt, 30)
+                    logger.warning(f"Attempt {attempt + 1} failed: {e}. Retrying in {wait_time}s...")
+                    await asyncio.sleep(wait_time)
+                except Exception as e:
+                    logger.error(f"Non-retryable error: {e}")
+                    raise
+
+            logger.error(f"All {max_retries} attempts failed")
+            raise last_exception
+        return wrapper
+    return decorator
 
 class HyperliquidLiquidationProvider:
     """
@@ -32,32 +121,45 @@ class HyperliquidLiquidationProvider:
     - Liquidations are marked in trade metadata
     """
 
-    def __init__(self, symbols: Optional[List[str]] = None):
+    def __init__(self,
+                 symbols: Optional[List[str]] = None,
+                 max_reconnect_attempts: int = MAX_RECONNECT_ATTEMPTS,
+                 heartbeat_interval: int = HEARTBEAT_INTERVAL):
         """
-        Initialize Hyperliquid liquidation provider
+        Initialize Hyperliquid liquidation provider with production features
 
         Args:
             symbols: List of symbols to monitor (e.g., ["BTC", "ETH", "SOL"])
                     If None, monitors all available symbols
+            max_reconnect_attempts: Maximum reconnection attempts
+            heartbeat_interval: Interval for heartbeat checks in seconds
         """
-        self.exchange = "hyperliquid"
-        self.api_base = "https://api.hyperliquid.xyz"
-        self.ws_url = "wss://api.hyperliquid.xyz/ws"
+        self.exchange: str = "hyperliquid"
+        self.api_base: str = "https://api.hyperliquid.xyz"
+        self.ws_url: str = "wss://api.hyperliquid.xyz/ws"
 
         # Symbols to monitor (None = all)
-        self.symbols = symbols
-        self.monitored_coins = set(symbols) if symbols else None
+        self.symbols: Optional[List[str]] = symbols
+        self.monitored_coins: Optional[Set[str]] = set(symbols) if symbols else None
 
         # Connection management
         self.session: Optional[aiohttp.ClientSession] = None
         self.ws_connection: Optional[websockets.WebSocketClientProtocol] = None
-        self.running = False
-        self._shutdown_event = asyncio.Event()
+        self.running: bool = False
+        self._shutdown_event: asyncio.Event = asyncio.Event()
+
+        # Enhanced connection management
+        self.max_reconnect_attempts: int = max_reconnect_attempts
+        self.heartbeat_interval: int = heartbeat_interval
+        self.health: ConnectionHealth = ConnectionHealth()
+        self._heartbeat_task: Optional[asyncio.Task] = None
+        self._reconnect_delay: float = INITIAL_RECONNECT_DELAY
 
         # Statistics
-        self.liquidation_count = 0
-        self.total_trade_count = 0
-        self.connection_errors = 0
+        self.liquidation_count: int = 0
+        self.total_trade_count: int = 0
+        self.connection_errors: int = 0
+        self.start_time: float = time.time()
 
         logger.info(f"🟣 Hyperliquid liquidation provider initialized")
         if self.symbols:
@@ -72,6 +174,33 @@ class HyperliquidLiquidationProvider:
             self.session = aiohttp.ClientSession(timeout=timeout)
         return self.session
 
+    async def _monitor_heartbeat(self) -> None:
+        """Monitor connection heartbeat"""
+        while self.running:
+            try:
+                await asyncio.sleep(self.heartbeat_interval)
+
+                if self.health.last_message_time:
+                    time_since_last = (datetime.utcnow() - self.health.last_message_time).total_seconds()
+
+                    if time_since_last > self.heartbeat_interval * 2:
+                        logger.warning(f"No messages for {time_since_last:.1f}s - connection may be stale")
+
+                        # Force reconnection
+                        if self.ws_connection:
+                            await self.ws_connection.close()
+
+            except Exception as e:
+                logger.error(f"Heartbeat monitor error: {e}")
+
+    def _get_reconnect_delay(self) -> float:
+        """Calculate reconnection delay with exponential backoff and jitter"""
+        delay = min(self._reconnect_delay, MAX_RECONNECT_DELAY)
+        jitter = random.uniform(0, delay * 0.1)  # Add up to 10% jitter
+        self._reconnect_delay = min(self._reconnect_delay * 2, MAX_RECONNECT_DELAY)
+        return delay + jitter
+
+    @retry_on_failure(max_retries=3)
     async def get_available_symbols(self) -> List[str]:
         """
         Get list of available trading symbols from Hyperliquid
@@ -151,45 +280,70 @@ class HyperliquidLiquidationProvider:
 
     async def connect_websocket(self) -> bool:
         """
-        Connect to Hyperliquid WebSocket
+        Connect to Hyperliquid WebSocket with enhanced error handling
 
         Returns:
             True if connection successful
         """
         try:
-            self.ws_connection = await websockets.connect(
-                self.ws_url,
-                ping_interval=20,
-                ping_timeout=10
+            self.health.state = ConnectionState.CONNECTING
+            self.health.connection_attempts += 1
+
+            # Add connection timeout
+            self.ws_connection = await asyncio.wait_for(
+                websockets.connect(
+                    self.ws_url,
+                    ping_interval=20,
+                    ping_timeout=10,
+                    close_timeout=10
+                ),
+                timeout=30
             )
 
+            self.health.update_connected()
+            self._reconnect_delay = INITIAL_RECONNECT_DELAY  # Reset delay on success
             logger.info(f"✅ Connected to Hyperliquid WebSocket")
             return True
 
+        except asyncio.TimeoutError:
+            logger.error("Connection timeout")
+            self.health.update_disconnected("Connection timeout")
+            self.connection_errors += 1
+            return False
         except Exception as e:
             logger.error(f"❌ Failed to connect to Hyperliquid WebSocket: {e}")
+            self.health.update_disconnected(str(e))
             self.connection_errors += 1
             return False
 
     async def start_monitoring(self) -> AsyncIterator[CompactLiquidation]:
         """
-        Start monitoring liquidations
+        Start monitoring liquidations with enhanced reliability
 
         Yields:
             CompactLiquidation objects as they occur
         """
         self.running = True
+        reconnect_attempts = 0
 
-        while self.running and not self._shutdown_event.is_set():
+        # Start heartbeat monitor
+        self._heartbeat_task = asyncio.create_task(self._monitor_heartbeat())
+
+        while self.running and not self._shutdown_event.is_set() and reconnect_attempts < self.max_reconnect_attempts:
             try:
                 # Connect to WebSocket
                 if not await self.connect_websocket():
-                    logger.warning("Retrying WebSocket connection in 5 seconds...")
+                    reconnect_attempts += 1
+                    delay = self._get_reconnect_delay()
+                    logger.warning(f"Retrying WebSocket connection in {delay:.1f}s (attempt {reconnect_attempts}/{self.max_reconnect_attempts})")
                     try:
-                        await asyncio.wait_for(self._shutdown_event.wait(), timeout=5.0)
+                        await asyncio.wait_for(self._shutdown_event.wait(), timeout=delay)
                         break  # Shutdown requested
                     except asyncio.TimeoutError:
                         continue
+
+                # Connection successful, reset attempt counter
+                reconnect_attempts = 0
 
                 # Subscribe to allMids for price data
                 await self.subscribe_to_all_mids()
@@ -214,6 +368,8 @@ class HyperliquidLiquidationProvider:
 
                     try:
                         data = json.loads(message)
+                        self.health.total_messages += 1
+                        self.health.last_message_time = datetime.utcnow()
 
                         # Process trade data
                         if self._is_trade_message(data):
@@ -401,15 +557,27 @@ class HyperliquidLiquidationProvider:
         logger.info(f"   Total trades: {self.total_trade_count}")
         logger.info(f"   Liquidations: {self.liquidation_count}")
 
-    def get_stats(self) -> dict:
-        """Get monitoring statistics"""
+    def get_stats(self) -> Dict[str, Any]:
+        """Get comprehensive monitoring statistics"""
+        uptime = time.time() - self.start_time
         return {
             "exchange": self.exchange,
             "liquidation_count": self.liquidation_count,
             "total_trade_count": self.total_trade_count,
             "connection_errors": self.connection_errors,
             "running": self.running,
-            "symbols": list(self.monitored_coins) if self.monitored_coins else "ALL"
+            "symbols": list(self.monitored_coins) if self.monitored_coins else "ALL",
+            "uptime_seconds": uptime,
+            "health": {
+                "state": self.health.state.value if isinstance(self.health.state, Enum) else self.health.state,
+                "connection_attempts": self.health.connection_attempts,
+                "successful_connections": self.health.successful_connections,
+                "failed_connections": self.health.failed_connections,
+                "total_messages": self.health.total_messages,
+                "error_count": self.health.error_count,
+                "last_error": self.health.last_error,
+                "connection_uptime": self.health.uptime_seconds
+            }
         }
 
 

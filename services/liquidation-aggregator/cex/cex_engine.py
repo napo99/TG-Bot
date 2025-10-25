@@ -1,8 +1,11 @@
 """
-CORE LIQUIDATION AGGREGATION ENGINE
+CORE LIQUIDATION AGGREGATION ENGINE - Production Grade with Type Hints
 Multi-Level Storage Architecture: In-Memory → Redis → TimescaleDB
 Supports: Binance + Bybit, BTCUSDT (Phase 1)
+Enhanced with comprehensive type annotations for better IDE support and type safety
 """
+
+from __future__ import annotations
 
 import asyncio
 import json
@@ -13,54 +16,68 @@ import os
 from collections import deque
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
-from typing import Optional, Dict, List, Deque, Any
+from typing import (
+    Optional, Dict, List, Deque, Any, Tuple, Union,
+    TypedDict, Protocol, AsyncGenerator, Awaitable,
+    Final, Literal, ClassVar, cast, TYPE_CHECKING
+)
 from enum import IntEnum
 
 import websockets
+from websockets.client import WebSocketClientProtocol
+from websockets.exceptions import WebSocketException
 import redis.asyncio as redis
+from redis import ConnectionPool
 import asyncpg
+from asyncpg.pool import Pool
+from asyncpg.connection import Connection
 import numpy as np
+from numpy.typing import NDArray
 
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
 
+# Type definitions for configuration
+ExchangeName = Literal['binance', 'bybit', 'okx']
+Symbol = str  # Trading symbol like 'BTCUSDT'
+
 # Redis configuration (using 'liq:' prefix to avoid conflicts)
-REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
-REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
-REDIS_DB = int(os.getenv('REDIS_LIQ_DB', 1))  # Use DB 1 for liquidations
-REDIS_PREFIX = 'liq:'  # All keys prefixed with 'liq:'
+REDIS_HOST: Final[str] = os.getenv('REDIS_HOST', 'localhost')
+REDIS_PORT: Final[int] = int(os.getenv('REDIS_PORT', 6380))
+REDIS_DB: Final[int] = int(os.getenv('REDIS_LIQ_DB', 1))  # Use DB 1 for liquidations
+REDIS_PREFIX: Final[str] = 'liq:'  # All keys prefixed with 'liq:'
 
 # TimescaleDB configuration
-DB_HOST = os.getenv('DB_HOST', 'localhost')
-DB_PORT = int(os.getenv('DB_PORT', 5432))
-DB_NAME = os.getenv('DB_NAME', 'liquidations')
-DB_USER = os.getenv('DB_USER', os.getenv('USER', 'postgres'))
-DB_PASSWORD = os.getenv('DB_PASSWORD', '')
+DB_HOST: Final[str] = os.getenv('DB_HOST', 'localhost')
+DB_PORT: Final[int] = int(os.getenv('DB_PORT', 5432))
+DB_NAME: Final[str] = os.getenv('DB_NAME', 'liquidations')
+DB_USER: Final[str] = os.getenv('DB_USER', os.getenv('USER', 'postgres'))
+DB_PASSWORD: Final[str] = os.getenv('DB_PASSWORD', '')
 
 # Exchange WebSocket URLs
-EXCHANGE_URLS = {
+EXCHANGE_URLS: Final[Dict[ExchangeName, str]] = {
     'binance': 'wss://fstream.binance.com/ws/!forceOrder@arr',
     'bybit': 'wss://stream.bybit.com/v5/public/linear'
 }
 
 # Symbols to track (Phase 1: BTCUSDT only)
-TRACKED_SYMBOLS = ['BTCUSDT']
+TRACKED_SYMBOLS: Final[List[Symbol]] = ['BTCUSDT']
 
 # Liquidation thresholds (institutional level)
-INSTITUTIONAL_THRESHOLD_USD = 100_000  # $100K+ only
-CASCADE_MIN_COUNT = 5  # 5+ liquidations in window
-CASCADE_WINDOW_SECONDS = 60  # 60-second cascade window
+INSTITUTIONAL_THRESHOLD_USD: Final[float] = 100_000  # $100K+ only
+CASCADE_MIN_COUNT: Final[int] = 5  # 5+ liquidations in window
+CASCADE_WINDOW_SECONDS: Final[int] = 60  # 60-second cascade window
 
 # Price level rounding
-PRICE_LEVEL_ROUNDING = {
+PRICE_LEVEL_ROUNDING: Final[Dict[str, int]] = {
     'BTCUSDT': 100,  # Round to $100 levels
     'ETHUSDT': 100,  # Round to $100 levels
     'default': 10    # Round to $10 levels for others
 }
 
 # Memory limits
-RING_BUFFER_SIZE = 1000  # Keep last 1000 events per symbol
+RING_BUFFER_SIZE: Final[int] = 1000  # Keep last 1000 events per symbol
 
 # =============================================================================
 # DATA MODELS
@@ -109,7 +126,7 @@ class LiquidationEvent:
         """Get side name"""
         return 'LONG' if self.side == Side.LONG else 'SHORT'
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> Dict[str, Union[str, float]]:
         """Convert to dictionary"""
         return {
             'timestamp': self.timestamp.isoformat(),
@@ -160,11 +177,11 @@ class InMemoryLiquidationBuffer:
     Processing latency: <100 microseconds
     """
 
-    def __init__(self, maxlen: int = RING_BUFFER_SIZE):
-        self.buffers: Dict[str, Deque[LiquidationEvent]] = {}
-        self.maxlen = maxlen
-        self.processed_count = 0
-        self.start_time = time.time()
+    def __init__(self, maxlen: int = RING_BUFFER_SIZE) -> None:
+        self.buffers: Dict[Symbol, Deque[LiquidationEvent]] = {}
+        self.maxlen: int = maxlen
+        self.processed_count: int = 0
+        self.start_time: float = time.time()
 
         # Initialize buffers for tracked symbols
         for symbol in TRACKED_SYMBOLS:
@@ -181,7 +198,7 @@ class InMemoryLiquidationBuffer:
         self.buffers[event.symbol].append(event)
         self.processed_count += 1
 
-    def get_recent_events(self, symbol: str, seconds: int = 60) -> List[LiquidationEvent]:
+    def get_recent_events(self, symbol: Symbol, seconds: int = 60) -> List[LiquidationEvent]:
         """
         Get events from last N seconds
         Latency: ~10-50 microseconds
@@ -189,27 +206,27 @@ class InMemoryLiquidationBuffer:
         if symbol not in self.buffers:
             return []
 
-        cutoff_ms = int((time.time() - seconds) * 1000)
+        cutoff_ms: int = int((time.time() - seconds) * 1000)
         return [e for e in self.buffers[symbol] if e.timestamp_ms >= cutoff_ms]
 
-    def detect_cascade_fast(self, symbol: str, window_seconds: int = CASCADE_WINDOW_SECONDS) -> Optional[List[LiquidationEvent]]:
+    def detect_cascade_fast(self, symbol: Symbol, window_seconds: int = CASCADE_WINDOW_SECONDS) -> Optional[List[LiquidationEvent]]:
         """
         Ultra-fast cascade detection
         Latency: ~10-50 microseconds
         """
-        recent = self.get_recent_events(symbol, window_seconds)
+        recent: List[LiquidationEvent] = self.get_recent_events(symbol, window_seconds)
 
         if len(recent) >= CASCADE_MIN_COUNT:
             # Check if total value meets threshold
-            total_value = sum(e.value_usd for e in recent)
+            total_value: float = sum(e.value_usd for e in recent)
             if total_value >= INSTITUTIONAL_THRESHOLD_USD:
                 return recent
 
         return None
 
-    def get_stats(self) -> Dict:
+    def get_stats(self) -> Dict[str, Union[int, float, Dict[Symbol, int]]]:
         """Get buffer statistics"""
-        uptime = time.time() - self.start_time
+        uptime: float = time.time() - self.start_time
         return {
             'processed_events': self.processed_count,
             'events_per_second': self.processed_count / uptime if uptime > 0 else 0,
@@ -229,9 +246,9 @@ class RedisLiquidationCache:
     Read latency: <0.5 ms
     """
 
-    def __init__(self, redis_client: redis.Redis):
-        self.redis = redis_client
-        self.prefix = REDIS_PREFIX
+    def __init__(self, redis_client: redis.Redis) -> None:
+        self.redis: redis.Redis = redis_client
+        self.prefix: str = REDIS_PREFIX
 
     async def cache_price_level(self, event: LiquidationEvent) -> None:
         """
@@ -381,13 +398,13 @@ class AsyncDatabaseWriter:
     Writes in background, never blocks real-time processing
     """
 
-    def __init__(self):
-        self.queue: asyncio.Queue = asyncio.Queue(maxsize=100_000)
-        self.db_pool: Optional[asyncpg.Pool] = None
-        self.running = False
-        self.written_count = 0
+    def __init__(self) -> None:
+        self.queue: asyncio.Queue[Tuple[LiquidationEvent, Optional[str], Optional[float]]] = asyncio.Queue(maxsize=100_000)
+        self.db_pool: Optional[Pool] = None
+        self.running: bool = False
+        self.written_count: int = 0
 
-    async def init_db(self):
+    async def init_db(self) -> None:
         """Initialize database connection pool"""
         self.db_pool = await asyncpg.create_pool(
             host=DB_HOST,

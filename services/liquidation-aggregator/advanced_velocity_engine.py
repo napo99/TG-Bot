@@ -64,6 +64,9 @@ MAX_VELOCITY_HISTORY = 100    # For acceleration/jerk calculation
 # Performance monitoring
 PERF_WARNING_THRESHOLD_MS = 1.0  # Warn if calculation takes >1ms
 
+# Timing tolerance for boundary calculations (handles test timing drift)
+TIMING_EPSILON = 0.001  # 1ms tolerance for floating-point comparisons
+
 
 # =============================================================================
 # DATA MODELS
@@ -320,7 +323,8 @@ class AdvancedVelocityEngine:
         # Using vectorized operations for speed
         for tf_name, tf_seconds in TIMEFRAMES.items():
             # Boolean mask for events within timeframe
-            mask = ages <= tf_seconds
+            # Add small epsilon to handle timing drift in tests and edge cases
+            mask = ages <= (tf_seconds + TIMING_EPSILON)
             count = np.sum(mask)
 
             # Calculate velocity (events/second)

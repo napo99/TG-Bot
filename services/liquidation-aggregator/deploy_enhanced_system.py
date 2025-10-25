@@ -13,7 +13,11 @@ import argparse
 import logging
 import signal
 import sys
+import os
 from typing import Optional
+
+# Add parent directory to path for shared models
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 
 # Import all agent components
 from enhanced_websocket_manager import EnhancedWebSocketManager
@@ -42,7 +46,7 @@ class EnhancedLiquidationSystem:
         self,
         symbols: list[str],
         exchanges: list[str],
-        redis_url: str = "redis://localhost:6379/0"
+        redis_url: str = "redis://localhost:6380/0"
     ):
         self.symbols = symbols
         self.exchanges = exchanges
@@ -81,11 +85,14 @@ class EnhancedLiquidationSystem:
         logger.info("✅ Signal Generator and Regime Detector initialized")
 
         # Initialize Agent 1 WebSocket Manager with integrated callback
+        # Note: EnhancedWebSocketManager uses redis_host/port/db, not redis_url
         self.websocket_manager = EnhancedWebSocketManager(
             symbols=self.symbols,
-            redis_url=self.redis_url,
-            user_callback=self.process_liquidation
+            redis_host='localhost',
+            redis_port=6380,
+            redis_db=0
         )
+        self.websocket_manager.user_callback = self.process_liquidation
 
         # Add exchanges
         for exchange in self.exchanges:
@@ -106,8 +113,18 @@ class EnhancedLiquidationSystem:
         """
         try:
             symbol = event.symbol
-            exchange = event.exchange
-            value_usd = event.actual_value_usd
+
+            # Handle different event types (CEX vs DEX)
+            if hasattr(event, 'exchange_name'):
+                exchange = event.exchange_name  # LiquidationEvent from CEX
+            else:
+                exchange = event.exchange  # CompactLiquidation from DEX
+
+            # Get USD value based on event type
+            if hasattr(event, 'actual_value_usd'):
+                value_usd = event.actual_value_usd  # CompactLiquidation
+            else:
+                value_usd = event.value_usd  # LiquidationEvent
 
             # Agent 2: Update velocity engine
             self.velocity_engine.add_event(symbol, value_usd, exchange)
@@ -213,7 +230,7 @@ async def main():
     )
     parser.add_argument(
         '--redis-url',
-        default='redis://localhost:6379/0',
+        default='redis://localhost:6380/0',
         help='Redis URL'
     )
 
@@ -281,7 +298,7 @@ if __name__ == "__main__":
     python deploy_enhanced_system.py --mode test --exchanges binance bybit okx hyperliquid
 
     # Custom Redis URL
-    python deploy_enhanced_system.py --redis-url redis://production:6379/0
+    python deploy_enhanced_system.py --redis-url redis://production:6380/0
     """
     try:
         asyncio.run(main())

@@ -1,0 +1,37 @@
+# Production Configuration
+application:
+  name: liquidation-aggregator
+  version: 1.0.0
+  environment: production
+
+exchanges:
+  binance:
+    enabled: true
+    rate_limit: 1200
+    timeout: 30
+  coinbase:
+    enabled: true
+    rate_limit: 600
+    timeout: 30
+  hyperliquid:
+    enabled: true
+    rate_limit: 1000
+    timeout: 30
+
+monitoring:
+  metrics_port: 9090
+  health_check_port: 8080
+  log_level: INFO
+
+performance:
+  max_connections: 100
+  websocket_timeout: 60
+  cache_ttl: 300
+  batch_size: 100
+
+alerts:
+  enabled: true
+  thresholds:
+    error_rate: 0.05
+    latency_ms: 1000
+    memory_percent: 80

@@ -1,16 +1,47 @@
-# Liquidation Aggregator Dependencies
-# Phase 1: Binance + Bybit, BTCUSDT
+# Liquidation Aggregator Production Dependencies
+# Python 3.10+ required
 
 # Core dependencies
-websockets>=12.0
-redis[hiredis]>=5.0.0
-asyncpg>=0.29.0
-numpy>=1.24.0
-python-dateutil>=2.8.0
+asyncio-mqtt==0.16.1
+aiohttp==3.8.5
+aioredis==2.0.1
+websocket-client==1.6.3
+websockets==11.0.3
 
-# Optional (for Jupyter notebooks)
-jupyter>=1.0.0
-pandas>=2.0.0
-matplotlib>=3.7.0
-plotly>=5.18.0
-kaleido>=0.2.1
+# Exchange SDKs
+python-binance==1.0.17
+coinbase==2.1.0
+ccxt==4.0.0
+
+# Data processing
+numpy==1.24.3
+pandas==2.1.1
+scipy==1.11.3
+
+# Database
+asyncpg==0.28.0
+redis==5.0.0
+sqlalchemy==2.0.20
+
+# Monitoring & Logging
+prometheus-client==0.17.1
+structlog==23.1.0
+python-json-logger==2.0.7
+
+# Configuration
+python-dotenv==1.0.0
+pyyaml==6.0.1
+
+# Utilities
+tenacity==8.2.3
+orjson==3.9.7
+msgpack==1.0.5
+ujson==5.8.0
+
+# Testing (optional, remove for production)
+pytest==7.4.2
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+
+# Security
+cryptography==41.0.4

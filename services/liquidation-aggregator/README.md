@@ -110,7 +110,7 @@ Expected output:
 brew services list | grep redis
 
 # Test Redis connection
-redis-cli -h localhost -p 6379 ping
+redis-cli -h localhost -p 6380 ping
 # Should return: PONG
 ```
 
@@ -121,7 +121,7 @@ Create `.env` file if you need custom configuration:
 ```bash
 # Redis configuration
 REDIS_HOST=localhost
-REDIS_PORT=6379
+REDIS_PORT=6380
 REDIS_LIQ_DB=1  # Use DB 1 for liquidations (avoids conflicts)
 
 # TimescaleDB configuration
@@ -412,6 +412,98 @@ For issues or questions:
 2. Verify database schema: `psql liquidations -c "\d liquidations_significant"`
 3. Check Redis keys: `redis-cli -n 1 KEYS liq:*`
 4. Review Jupyter notebook for data analysis examples
+
+---
+
+## 🚀 Production Deployment
+
+### **Docker Deployment (Recommended)**
+
+1. **Configure Environment:**
+```bash
+# Copy environment template
+cp .env.example .env
+
+# Edit with your actual API keys
+nano .env
+```
+
+2. **Deploy with Docker Compose:**
+```bash
+# Build and start all services
+./deploy.sh deploy
+
+# Or using docker-compose directly
+docker-compose up -d --build
+```
+
+3. **Check Status:**
+```bash
+# View running containers
+./deploy.sh status
+
+# View logs
+./deploy.sh logs
+
+# Health check
+curl http://localhost:8080/health
+```
+
+4. **Stop Services:**
+```bash
+./deploy.sh stop
+```
+
+### **Manual Deployment**
+
+1. **Install Dependencies:**
+```bash
+pip install -r requirements.txt
+```
+
+2. **Start Supporting Services:**
+```bash
+# Redis
+redis-server --port 6379
+
+# PostgreSQL + TimescaleDB
+pg_ctl start
+
+# Prometheus
+prometheus --config.file=monitoring/prometheus_config.yml
+
+# Grafana
+grafana-server
+```
+
+3. **Run Application:**
+```bash
+python professional_liquidation_monitor.py
+```
+
+### **Monitoring**
+
+- **Grafana Dashboard:** http://localhost:3000 (admin/password from .env)
+- **Prometheus Metrics:** http://localhost:9090
+- **Health Check:** http://localhost:8080/health
+- **Application Logs:** `docker-compose logs -f liquidation-monitor`
+
+### **File Structure**
+```
+liquidation-aggregator/
+├── deploy.sh                    # Production deployment script
+├── docker-compose.yml           # Docker orchestration
+├── Dockerfile                   # Container definition
+├── requirements.txt            # Python dependencies
+├── .env.example                # Environment template
+├── config/
+│   └── production.yaml         # Production configuration
+├── monitoring/
+│   └── prometheus_config.yml   # Prometheus settings
+├── scripts/
+│   └── health_check.py         # Health check endpoint
+└── alerts/                     # Alert configurations
+```
 
 ---
 

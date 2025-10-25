@@ -11,7 +11,7 @@ from datetime import datetime
 
 import websockets
 
-from cex_engine import LiquidationEvent, Exchange, Side, TRACKED_SYMBOLS
+from cex.cex_engine import LiquidationEvent, Exchange, Side, TRACKED_SYMBOLS
 
 
 # =============================================================================
