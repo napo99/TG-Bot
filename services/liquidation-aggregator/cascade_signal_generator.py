@@ -447,27 +447,60 @@ class CascadeSignalGenerator:
         Calculate normalized scores (0-1) for each component
 
         Normalization based on professional trading thresholds
+        Handles edge cases: zero, negative, NaN, inf values
         """
+        import math
+
+        def safe_normalize(value: float, threshold: float, use_abs: bool = False) -> float:
+            """Safely normalize value, handling edge cases"""
+            # Handle None
+            if value is None:
+                return 0.0
+
+            # Convert to float if needed
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                return 0.0
+
+            # Handle NaN and inf
+            if math.isnan(value) or math.isinf(value):
+                return 0.0
+
+            # Apply absolute value if requested
+            if use_abs:
+                value = abs(value)
+
+            # Ensure non-negative (for values that should never be negative)
+            if not use_abs:
+                value = max(0.0, value)
+
+            # Normalize
+            if threshold <= 0:
+                return 0.0
+
+            return min(1.0, value / threshold)
+
         scores = {}
 
-        # Velocity score (0-50 events/s range)
-        scores['velocity'] = min(1.0, metrics.get('velocity', 0.0) / 50.0)
+        # Velocity score (0-50 events/s range, must be positive)
+        scores['velocity'] = safe_normalize(metrics.get('velocity', 0.0), 50.0, use_abs=False)
 
-        # Acceleration score (0-20 events/s² range)
-        scores['acceleration'] = min(1.0, abs(metrics.get('acceleration', 0.0)) / 20.0)
+        # Acceleration score (0-20 events/s² range, use absolute value)
+        scores['acceleration'] = safe_normalize(metrics.get('acceleration', 0.0), 20.0, use_abs=True)
 
-        # Volume score (0-$50M/s range)
-        scores['volume'] = min(1.0, metrics.get('volume_usd', 0.0) / 50_000_000.0)
+        # Volume score (0-$50M/s range, must be positive)
+        scores['volume'] = safe_normalize(metrics.get('volume_usd', 0.0), 50_000_000.0, use_abs=False)
 
-        # OI change score (0-5% range)
-        scores['oi_change'] = min(1.0, abs(metrics.get('oi_change_1m', 0.0)) / 0.05)
+        # OI change score (0-5% range, use absolute value)
+        scores['oi_change'] = safe_normalize(metrics.get('oi_change_1m', 0.0), 0.05, use_abs=True)
 
-        # Funding pressure score (0-0.1% range)
-        scores['funding'] = min(1.0, abs(metrics.get('funding_rate', 0.0)) / 0.001)
+        # Funding pressure score (0-0.1% range, use absolute value)
+        scores['funding'] = safe_normalize(metrics.get('funding_rate', 0.0), 0.001, use_abs=True)
 
         # Volatility score (from risk multiplier, 0-5x range)
         vol_multiplier = metrics.get('vol_risk_multiplier', 1.0)
-        scores['volatility'] = min(1.0, vol_multiplier / 5.0)
+        scores['volatility'] = safe_normalize(vol_multiplier, 5.0, use_abs=False)
 
         return scores
 
@@ -501,17 +534,18 @@ class CascadeSignalGenerator:
         Determine signal level based on probability and metrics
 
         Uses multi-factor conditions for robustness
+        Uses absolute values for acceleration (can be positive or negative)
         """
         # EXTREME: Multiple extreme conditions
         if (probability > SIGNAL_THRESHOLDS[CascadeSignal.EXTREME] or
             (metrics.get('velocity', 0.0) > 100 and  # 100 events/s
-             metrics.get('acceleration', 0.0) > 40)):  # 40 events/s²
+             abs(metrics.get('acceleration', 0.0)) > 40)):  # 40 events/s²
             return SignalLevel.EXTREME
 
         # CRITICAL: High probability or combined extreme conditions
         if (probability > SIGNAL_THRESHOLDS[CascadeSignal.CRITICAL] or
             (metrics.get('velocity', 0.0) > 50 and
-             metrics.get('acceleration', 0.0) > 20)):
+             abs(metrics.get('acceleration', 0.0)) > 20)):
             return SignalLevel.CRITICAL
 
         # ALERT: Moderate probability or high velocity

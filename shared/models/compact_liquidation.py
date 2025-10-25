@@ -5,9 +5,12 @@ Target: 18 bytes per record
 """
 
 import struct
-from typing import NamedTuple, Optional
+from typing import NamedTuple, Optional, TYPE_CHECKING
 from datetime import datetime
 from enum import IntEnum
+
+if TYPE_CHECKING:
+    from typing import Optional
 
 
 class LiquidationSide(IntEnum):
@@ -75,25 +78,31 @@ class CompactLiquidation(NamedTuple):
         )
 
     @classmethod
-    def from_hyperliquid_data(cls, data: dict) -> 'CompactLiquidation':
+    def from_hyperliquid_data(cls, data: dict, liquidation_side: Optional['LiquidationSide'] = None) -> 'CompactLiquidation':
         """
         Create compact liquidation from Hyperliquid WebSocket trade data
 
         Expected Hyperliquid format:
         {
             "coin": "BTC",
-            "side": "B",  # B=Buy (short liquidation), A=Sell (long liquidation)
+            "side": "B",  # B=Buy, A=Sell (trade side, NOT liquidation side)
             "px": "45000.5",
             "sz": "0.5",
             "time": 1702000000000,
             "hash": "0x...",
             "tid": 12345678,
-            "liquidation": true
+            "users": ["0x...", "0x..."],  # [buyer, seller]
+            "liquidation_side": LiquidationSide,  # Added by our processing
+            "liquidated_user": "0x..."  # Added by our processing
         }
+
+        Args:
+            data: Trade data from WebSocket
+            liquidation_side: The actual liquidation side (LONG or SHORT), determined by
+                            checking HLP's position in the users array
         """
         # Extract values
         coin = data.get('coin', '')
-        side_str = data.get('side', '')  # "B" or "A"
         price = float(data.get('px', 0))
         size = float(data.get('sz', 0))
         timestamp_ms = int(data.get('time', 0))
@@ -104,10 +113,16 @@ class CompactLiquidation(NamedTuple):
         # Calculate USD value
         value_usd = price * size
 
-        # Convert side
-        # "A" (Ask/Sell) = long liquidation (forced sell of long position)
-        # "B" (Bid/Buy) = short liquidation (forced buy to close short position)
-        side = LiquidationSide.LONG if side_str == 'A' else LiquidationSide.SHORT
+        # Use the provided liquidation_side or extract from data
+        if liquidation_side is not None:
+            side = liquidation_side
+        elif 'liquidation_side' in data:
+            side = data['liquidation_side']
+        else:
+            # Fallback to old logic (which is incorrect but prevents breaking)
+            # This should not happen if the provider is fixed
+            side_str = data.get('side', '')
+            side = LiquidationSide.LONG if side_str == 'A' else LiquidationSide.SHORT
 
         # Create symbol for Hyperliquid (e.g., "BTC-PERP")
         symbol = f"{coin}-PERP"
@@ -135,8 +150,23 @@ class CompactLiquidation(NamedTuple):
     @property
     def actual_value_usd(self) -> float:
         """Get actual USD value"""
+        # Recalculate from actual price and quantity for accuracy
+        # (value_usd field is stored / 1000 for memory optimization)
         return self.actual_price * self.actual_quantity
-    
+
+    @property
+    def amount_usd(self) -> float:
+        """Alias for actual_value_usd for convenience"""
+        return self.actual_value_usd
+
+    @property
+    def symbol(self) -> str:
+        """Get symbol string (reconstructed from hash - returns generic for now)"""
+        # Note: Can't fully reconstruct original symbol from hash
+        # This is a limitation of the memory-optimized design
+        # For display purposes, use the original symbol if available
+        return f"SYMBOL_{self.symbol_hash}"
+
     @property
     def side_str(self) -> str:
         """Get human-readable side"""
