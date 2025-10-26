@@ -24,6 +24,12 @@ from typing import Optional, Dict, List, Tuple, Any
 
 import redis.asyncio as redis
 import numpy as np
+from rich.console import Console, Group
+from rich.live import Live
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
+from rich.columns import Columns
 
 # Add parent directory for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
@@ -31,9 +37,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 # Import all Agent components
 from enhanced_websocket_manager import EnhancedWebSocketManager
 from advanced_velocity_engine import AdvancedVelocityEngine, MultiTimeframeVelocity
-from cascade_risk_calculator import CascadeRiskCalculator, RiskAssessment, RiskLevel
-from cascade_signal_generator import CascadeSignalGenerator, CascadeSignal, SignalLevel
-from market_regime_detector import MarketRegimeDetector, RegimeInfo, MarketRegime
+from cascade_risk_calculator import CascadeRiskCalculator
+from cascade_signal_generator import CascadeSignalGenerator, SignalLevel
+from market_regime_detector import MarketRegimeDetector, MarketRegime
 
 # Configure logging
 logging.basicConfig(
@@ -41,6 +47,45 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger('professional_monitor')
+
+
+# =============================================================================
+# TYPE DEFINITIONS
+# =============================================================================
+
+
+class RiskLevel(Enum):
+    """Risk severity tiers for cascade events."""
+    LOW = "low"
+    MODERATE = "moderate"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+@dataclass
+class RiskAssessment:
+    """Normalized risk output from cascade analysis."""
+    level: RiskLevel
+    score: float
+    factors: Dict[str, float]
+    timestamp: float
+
+
+@dataclass
+class RegimeInfo:
+    """Market regime snapshot."""
+    state: str  # bull, bear, sideways, volatile
+    confidence: float
+    indicators: Dict[str, Any]
+
+
+@dataclass
+class CascadeSignal:
+    """Simplified cascade signal summary for display."""
+    active: bool
+    risk_score: float
+    affected_exchanges: List[str]
+    estimated_impact: float
 
 
 # ANSI Color codes for professional display
@@ -148,7 +193,8 @@ class ProfessionalLiquidationMonitor:
         symbols: List[str],
         exchanges: List[str],
         redis_url: str = "redis://localhost:6380/0",
-        refresh_rate: float = 2.0
+        refresh_rate: float = 2.0,
+        compact_layout: bool = True
     ):
         """
         Initialize professional monitor
@@ -165,6 +211,7 @@ class ProfessionalLiquidationMonitor:
         self.exchanges = exchanges
         self.redis_url = redis_url
         self.refresh_rate = refresh_rate
+        self.compact_layout = compact_layout
 
         # Agent components (initialized in setup)
         self.websocket_manager: Optional[EnhancedWebSocketManager] = None
@@ -190,11 +237,13 @@ class ProfessionalLiquidationMonitor:
         self.btc_price = 0
         self.btc_change = 0
         self.current_regime: Optional[RegimeInfo] = None
+        self.latest_liquidation: Optional[Dict[str, Any]] = None
 
         # Terminal state
         self.running = False
         self.terminal_width = 120
         self.terminal_height = 40
+        self.console = Console()
 
         logger.info(f"Professional Monitor initialized for {len(symbols)} symbols on {len(exchanges)} exchanges")
 
@@ -207,7 +256,7 @@ class ProfessionalLiquidationMonitor:
         setup_start = time.perf_counter()
 
         # Initialize Redis
-        self.redis_client = await redis.from_url(self.redis_url)
+        self.redis_client = redis.from_url(self.redis_url)
         await self.redis_client.ping()
         logger.info("Redis connection established")
 
@@ -259,6 +308,19 @@ class ProfessionalLiquidationMonitor:
             # Get USD value
             value_usd = getattr(event, 'actual_value_usd', getattr(event, 'value_usd', 0))
             price = getattr(event, 'price', 0)
+            quantity = getattr(event, 'quantity', getattr(event, 'size', None))
+            current_ts = time.time()
+
+            # Track most recent liquidation for compact display
+            self.latest_liquidation = {
+                'symbol': symbol,
+                'exchange': exchange,
+                'side': side,
+                'value_usd': value_usd,
+                'price': price,
+                'quantity': quantity,
+                'timestamp': current_ts,
+            }
 
             # Update exchange activity tracking
             key = f"{exchange}:{symbol}"
@@ -273,7 +335,7 @@ class ProfessionalLiquidationMonitor:
                     last_side=side,
                     last_size=value_usd,
                     hour_volume=value_usd,
-                    last_update=time.time()
+                    last_update=current_ts
                 )
             else:
                 activity = self.exchange_activity[symbol][exchange]
@@ -281,7 +343,7 @@ class ProfessionalLiquidationMonitor:
                 activity.last_side = side
                 activity.last_size = value_usd
                 activity.hour_volume += value_usd
-                activity.last_update = time.time()
+                activity.last_update = current_ts
                 activity.total_events += 1
 
             # Agent 2: Update velocity engine
@@ -355,6 +417,38 @@ class ProfessionalLiquidationMonitor:
             level=level,
             message=message
         ))
+
+    @staticmethod
+    def _format_usd(value: float) -> str:
+        """Compact USD formatting for dashboards."""
+        abs_value = abs(value)
+        if abs_value >= 1_000_000:
+            return f"${value/1_000_000:.2f}M"
+        if abs_value >= 1_000:
+            return f"${value/1_000:.1f}K"
+        return f"${value:.0f}"
+
+    @staticmethod
+    def _signal_style(level: SignalLevel) -> str:
+        """Map signal level to Rich style string."""
+        mapping = {
+            SignalLevel.NONE: "dim",
+            SignalLevel.WATCH: "yellow",
+            SignalLevel.ALERT: "bold yellow",
+            SignalLevel.CRITICAL: "bold red",
+            SignalLevel.EXTREME: "bold red reverse",
+        }
+        return mapping.get(level, "bold")
+
+    @staticmethod
+    def _alert_style(level: str) -> str:
+        """Map alert level string to Rich style."""
+        level = level.upper()
+        if level == "CRITICAL":
+            return "bold red"
+        if level == "WARNING":
+            return "bold yellow"
+        return "cyan"
 
     async def update_correlations(self) -> None:
         """
@@ -430,15 +524,28 @@ class ProfessionalLiquidationMonitor:
         if symbol:
             metrics = self.velocity_engine.calculate_multi_timeframe_velocity(symbol)
             if metrics:
-                # Display each timeframe
-                timeframes = [
-                    ('100ms', metrics.velocity_100ms, None, None),
-                    ('2s', metrics.velocity_2s, None, None),
-                    ('10s', metrics.velocity_10s, metrics.acceleration, metrics.jerk),
-                    ('60s', metrics.velocity_60s, None, None),
+                get_count_method = getattr(self.velocity_engine, "get_event_count", None)
+
+                def resolve_count(attr_name: str, tf_label: str) -> int:
+                    value = getattr(metrics, attr_name, None)
+                    if value is not None:
+                        return int(value)
+                    if callable(get_count_method):
+                        try:
+                            return int(get_count_method(symbol, tf_label))
+                        except Exception:
+                            return 0
+                    return 0
+
+                # Display each timeframe (velocity + event counts)
+                timeframe_rows = [
+                    ('100ms', resolve_count('count_100ms', '100ms'), metrics.velocity_100ms, None, None),
+                    ('2s', resolve_count('count_2s', '2s'), metrics.velocity_2s, None, None),
+                    ('10s', resolve_count('count_10s', '10s'), metrics.velocity_10s, metrics.acceleration, metrics.jerk),
+                    ('60s', resolve_count('count_60s', '60s'), metrics.velocity_60s, None, None),
                 ]
 
-                for tf_name, velocity, accel, jerk in timeframes:
+                for tf_name, event_count, velocity, accel, jerk in timeframe_rows:
                     # Determine status based on velocity
                     if velocity > 10:
                         status = f"{Colors.CRITICAL}🔥 RAPID{Colors.RESET}"
@@ -453,10 +560,7 @@ class ProfessionalLiquidationMonitor:
                     accel_str = f"{accel:+.1f} evt/s²" if accel is not None else "---"
                     jerk_str = f"{jerk:+.1f} evt/s³" if jerk is not None else "---"
 
-                    # Get event count for timeframe
-                    events = self.velocity_engine.get_event_count(symbol, tf_name)
-
-                    print(f"{tf_name:<12} {events:<8} {velocity:<6.1f} evt/s   {accel_str:<14} {jerk_str:<14} {status}")
+                    print(f"{tf_name:<12} {event_count:<8} {velocity:<6.1f} evt/s   {accel_str:<14} {jerk_str:<14} {status}")
             else:
                 print(f"{Colors.DIM}Waiting for data...{Colors.RESET}")
 
@@ -566,9 +670,19 @@ class ProfessionalLiquidationMonitor:
                     factors.append("Accel↑")
                 if abs(metrics.jerk) > 1:
                     factors.append("Jerk↑")
-                if risk.volume_spike_detected:
+
+                # Support both rich assessment objects and lightweight stubs.
+                volume_spike = getattr(risk, "volume_spike_detected", None)
+                if volume_spike is None:
+                    volume_score = getattr(getattr(risk, "risk_factors", None), "volume_score", 0.0)
+                    volume_spike = volume_score >= 70
+                if volume_spike:
                     factors.append("Volume↑")
-                if risk.correlation > 0.7:
+
+                correlation_metric = getattr(risk, "correlation", None)
+                if correlation_metric is None:
+                    correlation_metric = getattr(getattr(risk, "risk_factors", None), "correlation_score", 0.0) / 100
+                if correlation_metric and correlation_metric > 0.7:
                     factors.append("Correlation↑")
 
             factors_str = ' '.join(factors) if factors else '-'
@@ -643,6 +757,116 @@ class ProfessionalLiquidationMonitor:
               f"Uptime: {Colors.VALUE}{uptime_str}{Colors.RESET} | "
               f"Press {Colors.WARNING}Ctrl+C{Colors.RESET} to exit")
 
+    def build_compact_dashboard(self) -> Group:
+        """Construct a compact dashboard renderable for Rich Live output."""
+        render_start = time.perf_counter()
+        now = time.time()
+        runtime = int(now - self.start_time)
+        throughput = self.total_events / max(runtime, 1)
+
+        # Summary header
+        summary_text = Text()
+        summary_text.append("⚡ LIVE  ", style="bold green")
+        summary_text.append(f"Runtime {runtime}s   ")
+        summary_text.append(f"Events {self.total_events:,}   ")
+        summary_text.append(f"Throughput {throughput:.1f}/s", style="bold")
+        summary_panel = Panel(summary_text, border_style="cyan", padding=(0, 1))
+
+        # Latest liquidation panel
+        liq_text = Text()
+        if self.latest_liquidation:
+            symbol = self.latest_liquidation['symbol']
+            exchange = (self.latest_liquidation['exchange'] or '').upper()
+            side = (self.latest_liquidation['side'] or '').upper()
+            side_style = "bold red" if side == "LONG" else "bold green" if side == "SHORT" else "white"
+            value = self._format_usd(self.latest_liquidation['value_usd'])
+            price = self.latest_liquidation['price']
+            age = now - self.latest_liquidation['timestamp']
+
+            liq_text.append(f"{symbol} ", style="bold")
+            liq_text.append(f"{side} ", style=side_style)
+            liq_text.append(f"{value} ", style="bold white")
+            if price:
+                liq_text.append(f"@ ${price:,.0f}  ", style="dim")
+            liq_text.append(f"{exchange}  ", style="cyan")
+            liq_text.append(f"{age:.1f}s ago", style="dim")
+        else:
+            liq_text.append("Waiting for liquidations…", style="dim")
+        liq_panel = Panel(liq_text, title="Last Liquidation", border_style="magenta", padding=(0, 1))
+
+        # Velocity panel (focus on 10s + 60s)
+        velocity_text = Text()
+        symbol_for_velocity = None
+        if 'BTCUSDT' in self.symbols:
+            symbol_for_velocity = 'BTCUSDT'
+        elif self.symbols:
+            symbol_for_velocity = self.symbols[0]
+
+        metrics = None
+        if self.velocity_engine and symbol_for_velocity:
+            metrics = self.velocity_engine.calculate_multi_timeframe_velocity(symbol_for_velocity)
+
+        if metrics:
+            velocity_text.append(f"{symbol_for_velocity}\n", style="bold")
+            velocity_text.append(f"10s {metrics.velocity_10s:.1f} evt/s  ", style="bold")
+            if metrics.acceleration is not None:
+                velocity_text.append(f"a {metrics.acceleration:+.1f} evt/s²  ", style="yellow")
+            if metrics.jerk is not None:
+                velocity_text.append(f"j {metrics.jerk:+.1f} evt/s³", style="yellow")
+            velocity_text.append(f"\n60s {metrics.velocity_60s:.1f} evt/s", style="dim")
+        else:
+            velocity_text.append("Waiting for data…", style="dim")
+        velocity_panel = Panel(velocity_text, title="Velocity", border_style="yellow", padding=(0, 1))
+
+        # Cascade risk panel
+        cascade_text = Text()
+        if self.cascade_risks:
+            symbol, (probability, signal_level, risk_assessment) = max(
+                self.cascade_risks.items(), key=lambda item: item[1][0]
+            )
+            cascade_text.append(f"{symbol}: ", style="bold")
+            cascade_text.append(
+                f"{probability:.0%} {signal_level.name.title()}",
+                style=self._signal_style(signal_level)
+            )
+            cascade_text.append(f"\nScore {risk_assessment.risk_score:.1f}  ", style="bold white")
+            cascade_text.append(f"Action {risk_assessment.action}", style="cyan")
+        else:
+            cascade_text.append("No cascade risks detected", style="dim")
+        cascade_panel = Panel(cascade_text, title="Cascade Risk", border_style="red", padding=(0, 1))
+
+        # Alerts panel
+        alerts_text = Text()
+        recent_alerts = list(self.alert_buffer)[-3:]
+        if recent_alerts:
+            for alert in reversed(recent_alerts):
+                time_str = datetime.fromtimestamp(alert.timestamp).strftime('%H:%M:%S')
+                icon = '🚨' if alert.level == 'CRITICAL' else '⚡' if alert.level == 'WARNING' else '📊'
+                alerts_text.append(f"{time_str} {icon} {alert.message}\n", style=self._alert_style(alert.level))
+        else:
+            alerts_text.append("No recent alerts", style="dim")
+        alerts_panel = Panel(alerts_text, title="Alerts", border_style="blue", padding=(0, 1))
+
+        # Footer diagnostics
+        avg_render = np.mean(self.render_times) * 1000 if self.render_times else 0
+        redis_status = "[green]✓[/green]" if self.redis_client else "[red]✗[/red]"
+        engine_status = "[green]✓[/green]" if self.velocity_engine else "[red]✗[/red]"
+        uptime = int(runtime)
+        uptime_str = f"{uptime//60}m {uptime%60}s"
+        footer_text = Text.from_markup(
+            f"Latency {avg_render:.1f}ms  Redis {redis_status}  Cascade {engine_status}  "
+            f"Signals {len(self.cascade_risks)}  Uptime {uptime_str}"
+        )
+        footer_panel = Panel(footer_text, border_style="grey37", padding=(0, 1))
+
+        columns = Columns([liq_panel, velocity_panel, cascade_panel], equal=True, expand=True, padding=(0, 1))
+        group = Group(summary_panel, columns, alerts_panel, footer_panel)
+
+        render_time = time.perf_counter() - render_start
+        self.render_times.append(render_time)
+
+        return group
+
     async def render_dashboard(self) -> None:
         """
         Render complete dashboard
@@ -678,9 +902,22 @@ class ProfessionalLiquidationMonitor:
 
     async def render_loop(self) -> None:
         """Main rendering loop"""
-        while self.running:
-            await self.render_dashboard()
-            await asyncio.sleep(self.refresh_rate)
+        if self.compact_layout:
+            refresh_interval = max(self.refresh_rate, 0.2)
+            refresh_hz = 1.0 / refresh_interval
+            with Live(
+                self.build_compact_dashboard(),
+                console=self.console,
+                refresh_per_second=refresh_hz,
+                screen=False,
+            ) as live:
+                while self.running:
+                    live.update(self.build_compact_dashboard())
+                    await asyncio.sleep(refresh_interval)
+        else:
+            while self.running:
+                await self.render_dashboard()
+                await asyncio.sleep(self.refresh_rate)
 
     async def start(self) -> None:
         """Start the monitor"""
@@ -748,6 +985,11 @@ async def main():
         default=2.0,
         help='Dashboard refresh rate in seconds'
     )
+    parser.add_argument(
+        '--full-dashboard',
+        action='store_true',
+        help='Use the legacy full-screen dashboard layout'
+    )
 
     args = parser.parse_args()
 
@@ -756,7 +998,8 @@ async def main():
         symbols=args.symbols,
         exchanges=args.exchanges,
         redis_url=args.redis_url,
-        refresh_rate=args.refresh
+        refresh_rate=args.refresh,
+        compact_layout=not args.full_dashboard
     )
 
     try:

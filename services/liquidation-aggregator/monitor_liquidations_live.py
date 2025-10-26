@@ -5,16 +5,27 @@ Shows trade flow, prices, and activity to prove it's working
 """
 
 import asyncio
+import contextlib
 import json
 import sys
 import os
 from datetime import datetime
 from collections import defaultdict, deque
 import websockets
-from typing import Dict, List
+from typing import Dict, List, Optional
 
-# Add parent directories to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+from dex.hyperliquid_liquidation_registry import (
+    HyperLiquidLiquidationRegistry,
+)
+
+# Add repository paths to import local modules
+REPO_ROOT = os.path.dirname(__file__)
+SERVICE_PARENT = os.path.join(REPO_ROOT, '..', '..')
+
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+if SERVICE_PARENT not in sys.path:
+    sys.path.insert(0, SERVICE_PARENT)
 
 # Colors for terminal output
 class Colors:
@@ -29,13 +40,11 @@ class Colors:
     BOLD = '\033[1m'
     DIM = '\033[2m'
 
-# HLP Liquidator address
-HLP_LIQUIDATOR = "0x2e3d94f0562703b25c83308a05046ddaf9a8dd14"
-
 class LiveLiquidationMonitor:
     def __init__(self):
         self.ws_url = "wss://api.hyperliquid.xyz/ws"
         self.api_base = "https://api.hyperliquid.xyz"
+        self.liquidation_registry = HyperLiquidLiquidationRegistry()
 
         # Aggregation data
         self.liquidations_by_token = defaultdict(lambda: {
@@ -120,6 +129,20 @@ class LiveLiquidationMonitor:
         print(f"Speed: {Colors.CYAN}{avg_tps:.1f} trades/sec{Colors.RESET} | ", end='')
         print(f"Liquidations: {Colors.BOLD}{Colors.RED}{self.total_liquidations}{Colors.RESET}")
         print("="*80)
+
+        # Registry health
+        registry_stats = self.liquidation_registry.snapshot()
+        cached_fills = registry_stats.get("cached_fills", 0)
+        last_fill_epoch = registry_stats.get("last_fill_epoch") or 0
+        if last_fill_epoch:
+            age_seconds = max(0, now.timestamp() - last_fill_epoch)
+            last_fill_str = datetime.fromtimestamp(last_fill_epoch).strftime('%H:%M:%S')
+            age_str = f"{age_seconds:.0f}s ago"
+        else:
+            last_fill_str = "N/A"
+            age_str = "no fills yet"
+
+        print(f"{Colors.DIM}Registry cache: {cached_fills} fills | Last fill: {last_fill_str} ({age_str}){Colors.RESET}")
 
         # Show top 5 most active coins with live prices
         print(f"\n{Colors.BOLD}📈 LIVE MARKET ACTIVITY:{Colors.RESET}")
@@ -215,11 +238,14 @@ class LiveLiquidationMonitor:
                     print(f"{coin}({total}) ", end='')
         else:
             print(f"\n{Colors.YELLOW}⏳ Waiting for liquidations...{Colors.RESET}")
-            print(f"{Colors.DIM}Liquidations occur during high volatility. Monitor is actively scanning all trades.{Colors.RESET}")
+            if registry_stats.get("cached_fills", 0) == 0:
+                print(f"{Colors.DIM}Registry has not seen recent HyperLiquid fills yet. Keep the monitor running during active sessions.{Colors.RESET}")
+            else:
+                print(f"{Colors.DIM}Liquidations occur during high volatility. Monitor is actively scanning all trades.{Colors.RESET}")
 
         print(f"\n{Colors.DIM}Press Ctrl+C to stop and see detailed stats{Colors.RESET}")
 
-    def process_trade(self, trade):
+    async def process_trade(self, trade: Dict) -> Optional[Dict]:
         """Process a trade and check if it's a liquidation"""
         self.total_trades_processed += 1
 
@@ -240,35 +266,49 @@ class LiveLiquidationMonitor:
             self.active_coins.add(coin)
 
         # Check for liquidation
-        users = trade.get('users', [])
-        if len(users) < 2:
+        detection = await self.liquidation_registry.classify_trade(trade)
+        if not detection:
             return None
 
-        buyer = users[0].lower()
-        seller = users[1].lower()
-        liquidator = HLP_LIQUIDATOR.lower()
-
-        if buyer != liquidator and seller != liquidator:
+        side = detection.get('side')
+        if side not in ('LONG', 'SHORT'):
             return None
 
-        # It's a liquidation!
-        if buyer == liquidator:
-            side = "SHORT"
-            liquidated_user = users[1]
-        else:
-            side = "LONG"
-            liquidated_user = users[0]
+        participants = detection.get('users', [])
+        liquidated_user = self._guess_liquidated_user(side, participants)
 
         return {
-            'coin': coin,
+            'coin': detection.get('coin', coin),
             'side': side,
-            'price': price,
-            'size': float(trade.get('sz', 0)),
-            'value': price * float(trade.get('sz', 0)),
-            'timestamp': int(trade.get('time', 0)) / 1000,
+            'price': detection.get('price', price),
+            'size': detection.get('size', float(trade.get('sz', 0))),
+            'value': detection.get('value', price * float(trade.get('sz', 0))),
+            'timestamp': detection.get('timestamp', int(trade.get('time', 0)) / 1000),
             'liquidated_user': liquidated_user,
-            'hlp_position': 'buyer' if buyer == liquidator else 'seller'
+            'participants': participants,
+            'evidence': detection.get('source'),
         }
+
+    @staticmethod
+    def _guess_liquidated_user(side: str, participants: List[str]) -> Optional[str]:
+        """
+        Try to infer the liquidated address from participant ordering.
+
+        HyperLiquid currently lists [buyer, seller]. During a CLOSE LONG,
+        the liquidator sells to close the long, so the buyer is the party
+        being closed out. The opposite applies for CLOSE SHORT events.
+        """
+        if len(participants) < 2:
+            return None
+
+        buyer, seller = participants[0], participants[1]
+
+        if side == 'LONG':
+            return buyer
+        if side == 'SHORT':
+            return seller
+
+        return None
 
     def print_liquidation_alert(self, liq):
         """Print a liquidation with alert"""
@@ -289,7 +329,11 @@ class LiveLiquidationMonitor:
         print(f"Time: {timestamp.strftime('%H:%M:%S')} | Token: {Colors.BOLD}{liq['coin']}{Colors.RESET}")
         print(f"Type: {color}{arrow} {desc}{Colors.RESET} | Price: ${liq['price']:,.2f}")
         print(f"Size: {liq['size']:.6f} | Value: {Colors.BOLD}{self.format_usd(liq['value'])}{Colors.RESET}")
-        print(f"User: {liq['liquidated_user'][:10]}...")
+        if liq.get('liquidated_user'):
+            print(f"User: {liq['liquidated_user'][:10]}...")
+        elif liq.get('participants'):
+            masked = ", ".join(p[:6] + "…" for p in liq['participants'])
+            print(f"Participants: {masked}")
         print(f"{Colors.BOLD}{'='*60}{Colors.RESET}")
 
         # Wait a bit to show the alert
@@ -330,6 +374,10 @@ class LiveLiquidationMonitor:
         coins = await self.get_all_coins()
         print(f"Found {len(coins)} tokens to monitor")
 
+        await self.liquidation_registry.start()
+
+        dashboard_task = None
+
         try:
             async with websockets.connect(self.ws_url, ping_interval=20, ping_timeout=10) as ws:
                 print(f"{Colors.GREEN}Connected to WebSocket{Colors.RESET}")
@@ -362,7 +410,7 @@ class LiveLiquidationMonitor:
                         trades = data.get('data', [])
 
                         for trade in trades:
-                            liq = self.process_trade(trade)
+                            liq = await self.process_trade(trade)
 
                             if liq:
                                 self.total_liquidations += 1
@@ -399,6 +447,12 @@ class LiveLiquidationMonitor:
             self.print_final_stats()
         except Exception as e:
             print(f"{Colors.RED}Error: {e}{Colors.RESET}")
+        finally:
+            if dashboard_task:
+                dashboard_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await dashboard_task
+            await self.liquidation_registry.close()
 
     def print_final_stats(self):
         """Print final aggregated statistics"""

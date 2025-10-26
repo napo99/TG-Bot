@@ -33,6 +33,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 
 from shared.models.compact_liquidation import CompactLiquidation, LiquidationSide
 
+from .hyperliquid_liquidation_registry import (
+    HyperLiquidLiquidationRegistry,
+)
+
 # Configuration
 LIQUIDATOR_ADDRESS: Final[str] = "0x2e3d94f0562703b25c83308a05046ddaf9a8dd14"
 MAX_RECONNECT_ATTEMPTS: Final[int] = 10
@@ -160,6 +164,7 @@ class HyperliquidLiquidationProvider:
         self.total_trade_count: int = 0
         self.connection_errors: int = 0
         self.start_time: float = time.time()
+        self.liquidation_registry = HyperLiquidLiquidationRegistry()
 
         logger.info(f"🟣 Hyperliquid liquidation provider initialized")
         if self.symbols:
@@ -329,83 +334,87 @@ class HyperliquidLiquidationProvider:
         # Start heartbeat monitor
         self._heartbeat_task = asyncio.create_task(self._monitor_heartbeat())
 
-        while self.running and not self._shutdown_event.is_set() and reconnect_attempts < self.max_reconnect_attempts:
-            try:
-                # Connect to WebSocket
-                if not await self.connect_websocket():
-                    reconnect_attempts += 1
-                    delay = self._get_reconnect_delay()
-                    logger.warning(f"Retrying WebSocket connection in {delay:.1f}s (attempt {reconnect_attempts}/{self.max_reconnect_attempts})")
-                    try:
-                        await asyncio.wait_for(self._shutdown_event.wait(), timeout=delay)
-                        break  # Shutdown requested
-                    except asyncio.TimeoutError:
-                        continue
+        await self.liquidation_registry.start()
+        try:
+            while self.running and not self._shutdown_event.is_set() and reconnect_attempts < self.max_reconnect_attempts:
+                try:
+                    # Connect to WebSocket
+                    if not await self.connect_websocket():
+                        reconnect_attempts += 1
+                        delay = self._get_reconnect_delay()
+                        logger.warning(f"Retrying WebSocket connection in {delay:.1f}s (attempt {reconnect_attempts}/{self.max_reconnect_attempts})")
+                        try:
+                            await asyncio.wait_for(self._shutdown_event.wait(), timeout=delay)
+                            break  # Shutdown requested
+                        except asyncio.TimeoutError:
+                            continue
 
-                # Connection successful, reset attempt counter
-                reconnect_attempts = 0
+                    # Connection successful, reset attempt counter
+                    reconnect_attempts = 0
 
-                # Subscribe to allMids for price data
-                await self.subscribe_to_all_mids()
+                    # Subscribe to allMids for price data
+                    await self.subscribe_to_all_mids()
 
-                # Get available symbols if not specified
-                if self.monitored_coins is None:
-                    symbols = await self.get_available_symbols()
-                    # Default to major coins if we can't get full list
-                    self.monitored_coins = set(symbols) if symbols else {"BTC", "ETH", "SOL"}
+                    # Get available symbols if not specified
+                    if self.monitored_coins is None:
+                        symbols = await self.get_available_symbols()
+                        # Default to major coins if we can't get full list
+                        self.monitored_coins = set(symbols) if symbols else {"BTC", "ETH", "SOL"}
 
-                # Subscribe to trades for each symbol
-                for coin in self.monitored_coins:
-                    if self._shutdown_event.is_set():
-                        break
-                    await self.subscribe_to_trades(coin)
-                    await asyncio.sleep(0.1)  # Rate limiting
+                    # Subscribe to trades for each symbol
+                    for coin in self.monitored_coins:
+                        if self._shutdown_event.is_set():
+                            break
+                        await self.subscribe_to_trades(coin)
+                        await asyncio.sleep(0.1)  # Rate limiting
 
-                # Process messages
-                async for message in self.ws_connection:
-                    if self._shutdown_event.is_set():
-                        break
+                    # Process messages
+                    async for message in self.ws_connection:
+                        if self._shutdown_event.is_set():
+                            break
 
-                    try:
-                        data = json.loads(message)
-                        self.health.total_messages += 1
-                        self.health.last_message_time = datetime.utcnow()
+                        try:
+                            data = json.loads(message)
+                            self.health.total_messages += 1
+                            self.health.last_message_time = datetime.utcnow()
 
-                        # Process trade data
-                        if self._is_trade_message(data):
-                            liquidation = await self._process_trade_message(data)
-                            if liquidation:
-                                self.liquidation_count += 1
-                                yield liquidation
+                            # Process trade data
+                            if self._is_trade_message(data):
+                                liquidation = await self._process_trade_message(data)
+                                if liquidation:
+                                    self.liquidation_count += 1
+                                    yield liquidation
 
-                    except json.JSONDecodeError as e:
-                        logger.error(f"❌ JSON decode error: {e}")
-                    except Exception as e:
-                        logger.error(f"❌ Error processing message: {e}")
-                        continue
+                        except json.JSONDecodeError as e:
+                            logger.error(f"❌ JSON decode error: {e}")
+                        except Exception as e:
+                            logger.error(f"❌ Error processing message: {e}")
+                            continue
 
-            except websockets.exceptions.ConnectionClosed:
-                if not self._shutdown_event.is_set():
-                    logger.warning("🟣 WebSocket connection closed, reconnecting...")
-                    try:
-                        await asyncio.wait_for(self._shutdown_event.wait(), timeout=5.0)
-                        break
-                    except asyncio.TimeoutError:
-                        continue
-            except asyncio.CancelledError:
-                logger.info("🟣 Monitoring task cancelled, shutting down gracefully...")
-                break
-            except Exception as e:
-                if not self._shutdown_event.is_set():
-                    logger.error(f"❌ Hyperliquid monitor error: {e}")
-                    self.connection_errors += 1
-                    try:
-                        await asyncio.wait_for(self._shutdown_event.wait(), timeout=10.0)
-                        break
-                    except asyncio.TimeoutError:
-                        continue
-            finally:
-                await self._cleanup_connection()
+                except websockets.exceptions.ConnectionClosed:
+                    if not self._shutdown_event.is_set():
+                        logger.warning("🟣 WebSocket connection closed, reconnecting...")
+                        try:
+                            await asyncio.wait_for(self._shutdown_event.wait(), timeout=5.0)
+                            break
+                        except asyncio.TimeoutError:
+                            continue
+                except asyncio.CancelledError:
+                    logger.info("🟣 Monitoring task cancelled, shutting down gracefully...")
+                    break
+                except Exception as e:
+                    if not self._shutdown_event.is_set():
+                        logger.error(f"❌ Hyperliquid monitor error: {e}")
+                        self.connection_errors += 1
+                        try:
+                            await asyncio.wait_for(self._shutdown_event.wait(), timeout=10.0)
+                            break
+                        except asyncio.TimeoutError:
+                            continue
+                finally:
+                    await self._cleanup_connection()
+        finally:
+            await self.liquidation_registry.close()
 
     def _is_trade_message(self, data: dict) -> bool:
         """
@@ -446,8 +455,8 @@ class HyperliquidLiquidationProvider:
         }
 
         Liquidation Detection:
-        A trade is a liquidation if HLP Liquidator address is involved:
-        0x2e3d94f0562703b25c83308a05046ddaf9a8dd14
+        A trade is considered a liquidation when its `tid` matches one of the
+        recent fills returned by the official HyperLiquid vault (`userFills`).
 
         Args:
             data: WebSocket message data
@@ -455,58 +464,53 @@ class HyperliquidLiquidationProvider:
         Returns:
             CompactLiquidation if this is a liquidation, None otherwise
         """
-        # HLP Liquidator address (official Hyperliquid liquidation bot)
-        LIQUIDATOR_ADDRESS = "0x2e3d94f0562703b25c83308a05046ddaf9a8dd14"
-
         try:
             trades = data.get('data', [])
 
             for trade in trades:
                 self.total_trade_count += 1
 
-                # Check if this trade involves the liquidator
-                users = trade.get('users', [])
-                if not users or len(users) < 2:
+                detection = await self.liquidation_registry.classify_trade(trade)
+                if not detection:
                     continue
 
-                buyer = users[0].lower()
-                seller = users[1].lower()
-                liquidator = LIQUIDATOR_ADDRESS.lower()
-
-                # Determine if it's a liquidation and which side
-                liquidation_side = None
-                liquidated_user = None
-
-                if buyer == liquidator:
-                    # HLP is buying = closing a short position = SHORT liquidation
-                    liquidation_side = LiquidationSide.SHORT
-                    liquidated_user = users[1]  # The seller being liquidated
-                elif seller == liquidator:
-                    # HLP is selling = closing a long position = LONG liquidation
+                side_label = detection.get("side")
+                if side_label == "LONG":
                     liquidation_side = LiquidationSide.LONG
-                    liquidated_user = users[0]  # The buyer being liquidated
+                elif side_label == "SHORT":
+                    liquidation_side = LiquidationSide.SHORT
                 else:
-                    # Not a liquidation
                     continue
 
-                # Extract trade data
-                coin = trade.get('coin', '')
-                price = float(trade.get('px', 0))
-                size = float(trade.get('sz', 0))
-                timestamp_ms = int(trade.get('time', 0))
+                coin = detection.get("coin", trade.get("coin", ""))
+                price = detection.get("price", float(trade.get("px", 0)))
+                size = detection.get("size", float(trade.get("sz", 0)))
 
-                # Validate data
+                timestamp_override = detection.get("timestamp")
+                if timestamp_override is not None:
+                    timestamp_ms = int(float(timestamp_override) * 1000)
+                else:
+                    timestamp_ms = int(trade.get("time", 0))
+
                 if not coin or price <= 0 or size <= 0:
-                    logger.warning(f"Invalid liquidation data: {trade}")
+                    logger.warning(f"Invalid liquidation data: {detection}")
                     continue
 
-                # Add the liquidation side and liquidated user to trade data
+                trade = trade.copy()
+                trade['coin'] = coin
+                trade['px'] = str(price)
+                trade['sz'] = str(size)
+                trade['time'] = timestamp_ms
+                trade['value'] = price * size
                 trade['liquidation_side'] = liquidation_side
-                trade['liquidated_user'] = liquidated_user
+                trade['liquidated_user'] = self._infer_liquidated_user(
+                    side_label,
+                    detection.get("users", []),
+                )
 
                 # Log the liquidation detection
                 logger.debug(f"💥 Liquidation detected: {coin} {liquidation_side.name} "
-                           f"${price * size:.2f} (user: {liquidated_user[:8]}...)")
+                           f"${price * size:.2f}")
 
                 # Convert to CompactLiquidation with correct side
                 return CompactLiquidation.from_hyperliquid_data(trade, liquidation_side)
@@ -516,6 +520,19 @@ class HyperliquidLiquidationProvider:
         except Exception as e:
             logger.error(f"❌ Error processing Hyperliquid trade: {e}")
             return None
+
+    @staticmethod
+    def _infer_liquidated_user(side: str, participants: List[str]) -> Optional[str]:
+        if len(participants) < 2:
+            return None
+
+        buyer, seller = participants[0], participants[1]
+
+        if side == "LONG":
+            return buyer
+        if side == "SHORT":
+            return seller
+        return None
 
     async def _cleanup_connection(self) -> None:
         """Clean up WebSocket and HTTP connections"""

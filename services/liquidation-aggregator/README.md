@@ -136,6 +136,22 @@ TRACKED_SYMBOLS=BTCUSDT
 INSTITUTIONAL_THRESHOLD_USD=100000
 ```
 
+### **5. Operational Scripts**
+
+All operator-facing entry points live under `scripts/`. See `scripts/README.md` for full usage notes. Quick examples:
+
+```bash
+# HyperLiquid live dashboard
+python -m scripts.run_liquidation_monitor
+
+# Professional multi-exchange monitor (Redis defaults to 6380)
+python -m scripts.run_professional_monitor --symbols BTCUSDT ETHUSDT --exchanges binance hyperliquid
+# Add --full-dashboard to restore the legacy full-screen layout
+
+# Market context (open interest / funding snapshot)
+python -m scripts.show_market_context --symbol BTCUSDT --once
+```
+
 ---
 
 ## 🚀 Running the Aggregator

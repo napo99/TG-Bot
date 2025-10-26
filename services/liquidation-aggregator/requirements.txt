@@ -37,6 +37,7 @@ tenacity==8.2.3
 orjson==3.9.7
 msgpack==1.0.5
 ujson==5.8.0
+rich==13.7.0
 
 # Testing (optional, remove for production)
 pytest==7.4.2
