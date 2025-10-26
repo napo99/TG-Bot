@@ -62,8 +62,8 @@ EXCHANGE_URLS: Final[Dict[ExchangeName, str]] = {
     'bybit': 'wss://stream.bybit.com/v5/public/linear'
 }
 
-# Symbols to track (Phase 1: BTCUSDT only)
-TRACKED_SYMBOLS: Final[List[Symbol]] = ['BTCUSDT']
+# Symbols to track (Phase 1 now covers BTC & ETH perpetuals)
+TRACKED_SYMBOLS: Final[List[Symbol]] = ['BTCUSDT', 'ETHUSDT']
 
 # Liquidation thresholds (institutional level)
 INSTITUTIONAL_THRESHOLD_USD: Final[float] = 100_000  # $100K+ only

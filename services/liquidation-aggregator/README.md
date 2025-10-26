@@ -1,6 +1,6 @@
 # 🚀 Multi-Exchange Liquidation Aggregator
 
-**Phase 1:** Binance + Bybit | BTCUSDT | Multi-Level Storage Architecture
+**Phase 1:** Binance + Bybit | BTCUSDT & ETHUSDT | Multi-Level Storage Architecture
 
 ## 📋 Overview
 
@@ -132,7 +132,7 @@ DB_USER=screener-m3
 DB_PASSWORD=
 
 # Tracking configuration
-TRACKED_SYMBOLS=BTCUSDT
+TRACKED_SYMBOLS=BTCUSDT,ETHUSDT
 INSTITUTIONAL_THRESHOLD_USD=100000
 ```
 
@@ -154,6 +154,53 @@ python -m scripts.show_market_context --symbol BTCUSDT --once
 
 ---
 
+## 🧠 Unified Open Interest Engine (October 2025 refresh)
+
+The multi-exchange OI implementation has been consolidated under `src/core/exchanges`. Production wrappers remain in `services/market-data/` so existing tooling keeps working, but new integrations should import directly from the `core.exchanges` package.
+
+- **Library usage**
+  ```python
+  from core.exchanges.unified_aggregator import UnifiedOIAggregator
+  ```
+  Each provider (Binance, Bybit, OKX, Gate.io, Bitget, Hyperliquid) lives alongside the aggregator in the same package.
+
+- **One-off snapshot**
+  ```bash
+  # Uses the compatibility wrapper which forwards to the new core package
+  python services/market-data/unified_oi_aggregator.py
+  ```
+  This writes a fresh `unified_oi_results.json` at the repository root and logs per-exchange health. The command requires only Python and internet access; no Redis/Postgres services are needed.
+
+- **Automated validation**
+  ```bash
+  pytest services/liquidation-aggregator/tests/test_velocity_engine.py \
+         services/liquidation-aggregator/tests/test_signal_generation.py
+  ```
+  These suites cover the downstream consumers that rely on the OI totals and ensure the refactor didn’t break risk calculations.
+
+---
+
+## 💥 HyperLiquid Liquidation Monitor (Dynamic vault tracking)
+
+HyperLiquid liquidations no longer rely on a single hard-coded wallet. The provider now watches the public trade feed and cross-references `userFills` from the HLP vault via the registry in `dex/hyperliquid_liquidation_registry.py`.
+
+- **Run the live dashboard**
+  ```bash
+  python monitor_liquidations_live.py
+  ```
+  The CLI refreshes in place, showing live trades, liquidation counts, and registry cache status. Expect a “Registry cache” line with the latest fill timestamp; if it stops updating, investigate API access.
+
+- **Integrate with professional monitor**
+  `professional_liquidation_monitor.py` imports the same provider, so multi-exchange runs automatically benefit from the dynamic detection.
+
+- **Regression tests**
+  ```bash
+  pytest services/liquidation-aggregator/tests/test_hyperliquid_registry.py
+  ```
+  This mocks the HyperLiquid API responses and verifies that `tid` matching, side classification, and cache refresh behave as expected. Running the full suite (`pytest services/liquidation-aggregator`) is recommended before deployments.
+
+---
+
 ## 🚀 Running the Aggregator
 
 ### **Start the Aggregator:**
@@ -169,7 +216,7 @@ Expected output:
 ```
 ================================================================================
 LIQUIDATION AGGREGATOR - PHASE 1
-Exchanges: Binance + Bybit | Symbol: BTCUSDT
+Exchanges: Binance + Bybit | Symbols: BTCUSDT, ETHUSDT
 Multi-Level Storage: In-Memory → Redis → TimescaleDB
 ================================================================================
 2025-10-21 10:30:00 - main - INFO - 🚀 Initializing Liquidation Aggregator...
