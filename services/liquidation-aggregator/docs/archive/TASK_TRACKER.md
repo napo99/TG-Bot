@@ -21,12 +21,12 @@
 14. ✅ **Add __init__.py files** - Package initialization files
 15. ✅ **Create deployment scripts** - Production deployment configuration
 
-## 🚧 Remaining Tasks (16-25) - 40% Pending
+## 🚧 Remaining Tasks (16-25) - 32% Pending
 
 ### Phase 3: Advanced Components (Tasks 16-20)
 16. ⬜ **Create monitoring/grafana_dashboard.json** - Grafana visualization dashboard
-17. ⬜ **Create alerts/alert_rules.yaml** - Alert configuration rules
-18. ⬜ **Implement backtesting framework** - Historical data testing
+17. ✅ **Create alerts/alert_rules.yaml** - Alert configuration rules
+18. ✅ **Implement backtesting framework** - Historical data testing
 19. ⬜ **Add performance benchmarks** - System performance metrics
 20. ⬜ **Create API documentation** - REST API specs
 
@@ -39,8 +39,8 @@
 
 ## 📊 Progress Summary
 
-- **Completed:** 15 tasks (60%)
-- **Remaining:** 10 tasks (40%)
+- **Completed:** 17 tasks (68%)
+- **Remaining:** 8 tasks (32%)
 - **Status:** Core system operational, deployment ready
 - **Last Updated:** $(date '+%Y-%m-%d %H:%M:%S')
 - **Commit:** 937585b
@@ -48,11 +48,15 @@
 ## 🎯 Next Steps
 
 1. Complete monitoring dashboard (Task 16)
-2. Set up alert rules (Task 17)
-3. Implement testing framework (Tasks 18-22)
-4. Finalize documentation (Task 23)
-5. Set up CI/CD (Task 24)
-6. System validation (Task 25)
+2. Implement testing framework (Tasks 19-22)
+3. Finalize documentation (Task 23)
+4. Set up CI/CD (Task 24)
+5. System validation (Task 25)
+
+## 📌 Deferred Enhancements (Documented for Future Work)
+
+- Generate `monitoring/grafana_dashboard.json` with cascade risk, velocity, volume, exchange comparison, and alert status panels.
+- Wire the new `backtest.py` CLI into CI/CD once TimescaleDB credentials are configured.
 
 ## 📁 Files Created/Modified
 
