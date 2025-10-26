@@ -5,10 +5,15 @@ Validate our detection algorithms against historical cascade events
 
 import asyncio
 import json
+import logging
+import os
 import time
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, asdict
+from pathlib import Path
+
+import asyncpg
 import pandas as pd
 import numpy as np
 from collections import defaultdict
@@ -41,7 +46,7 @@ class BacktestResult:
 
     # Timing metrics
     avg_detection_lag_ms: float = 0.0   # How fast we detect
-    fastest_detection_ms: float = float('inf')
+    fastest_detection_ms: float = 0.0
     slowest_detection_ms: float = 0.0
 
     # Severity accuracy
@@ -129,7 +134,7 @@ class CascadeBacktester:
 
                 # Check if we're in a known cascade window
                 in_cascade = self._is_in_cascade_window(timestamp)
-                detected_cascade = metrics.signal >= CascadeSignal.ALERT
+                detected_cascade = metrics.signal.value >= CascadeSignal.ALERT.value
 
                 # Update confusion matrix
                 if in_cascade and detected_cascade:
@@ -192,7 +197,7 @@ class CascadeBacktester:
                 metrics = await self.detector.process_liquidation(event.to_dict())
 
                 # Trading logic based on cascade detection
-                if metrics.signal >= CascadeSignal.CRITICAL and position == 0:
+                if metrics.signal.value >= CascadeSignal.CRITICAL.value and position == 0:
                     # Enter short position on cascade detection
                     position = -capital * 0.1 / current_price  # Risk 10% per trade
                     entry_price = current_price
@@ -204,7 +209,7 @@ class CascadeBacktester:
                         'signal': metrics.signal.name
                     })
 
-                elif position < 0 and metrics.signal <= CascadeSignal.WATCH:
+                elif position < 0 and metrics.signal.value <= CascadeSignal.WATCH.value:
                     # Exit short when cascade ends
                     pnl = (entry_price - current_price) * abs(position)
                     capital += pnl
@@ -357,26 +362,231 @@ class CascadeBacktester:
         return report
 
 
+class BacktestingFramework:
+    """
+    End-to-end backtesting utility that encapsulates data loading and execution.
+
+    Data sources in priority order:
+    1. TimescaleDB (`liquidations_significant` table)
+    2. CSV exports under `data/backtest/*.csv`
+    3. Mock fixtures for tests and offline development
+    """
+
+    REQUIRED_COLUMNS = [
+        'timestamp',
+        'exchange',
+        'symbol',
+        'side',
+        'quantity',
+        'usd_value',
+        'price'
+    ]
+
+    def __init__(
+        self,
+        csv_dir: str = "data/backtest",
+        mock_dir: str = "data/mock",
+        backtester: Optional[CascadeBacktester] = None
+    ):
+        self.csv_dir = Path(csv_dir)
+        self.mock_dir = Path(mock_dir)
+        self.backtester = backtester or CascadeBacktester()
+        self.timescale_config = {
+            'host': os.getenv('DB_HOST', 'localhost'),
+            'port': int(os.getenv('DB_PORT', 5432)),
+            'database': os.getenv('DB_NAME', 'liquidations'),
+            'user': os.getenv('DB_USER', os.getenv('USER', 'postgres')),
+            'password': os.getenv('DB_PASSWORD', '')
+        }
+
+    async def load_data(
+        self,
+        source: str = 'timescale',
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None
+    ) -> pd.DataFrame:
+        """Load historical liquidation data from the requested source."""
+        source = source.lower()
+
+        if source == 'timescale':
+            return await self._load_from_timescale(start_date, end_date)
+        if source == 'csv':
+            return self._load_from_csv()
+        if source == 'mock':
+            return self._load_mock()
+
+        raise ValueError(f"Unsupported data source '{source}'")
+
+    async def _load_from_timescale(
+        self,
+        start_date: Optional[datetime],
+        end_date: Optional[datetime]
+    ) -> pd.DataFrame:
+        """Query TimescaleDB for liquidation events."""
+        start = start_date or (datetime.utcnow() - timedelta(days=7))
+        end = end_date or datetime.utcnow()
+
+        query = """
+            SELECT time, exchange, symbol, side, quantity, value_usd, price
+            FROM liquidations_significant
+            WHERE time BETWEEN $1 AND $2
+            ORDER BY time ASC
+        """
+
+        logging.info(
+            "Loading backtest data from TimescaleDB (%s → %s)",
+            start.isoformat(),
+            end.isoformat()
+        )
+
+        try:
+            pool = await asyncpg.create_pool(
+                **self.timescale_config,
+                min_size=1,
+                max_size=4,
+                command_timeout=60
+            )
+        except Exception as exc:
+            raise ConnectionError(
+                "Failed to connect to TimescaleDB. Verify DB_HOST/DB_PORT/DB_NAME credentials "
+                "and ensure the database is reachable."
+            ) from exc
+
+        try:
+            async with pool.acquire() as conn:
+                try:
+                    rows = await conn.fetch(query, start, end)
+                except asyncpg.exceptions.UndefinedTableError as exc:
+                    raise RuntimeError(
+                        "TimescaleDB missing table 'liquidations_significant'. Run migrations before backtesting."
+                    ) from exc
+        finally:
+            await pool.close()
+
+        if not rows:
+            raise RuntimeError("TimescaleDB query returned no liquidation data")
+
+        dataframe = pd.DataFrame([dict(row) for row in rows])
+        dataframe.rename(columns={'time': 'timestamp', 'value_usd': 'usd_value'}, inplace=True)
+        return self._standardize_dataframe(dataframe)
+
+    def _load_from_csv(self) -> pd.DataFrame:
+        """Load liquidation history from CSV exports."""
+        if not self.csv_dir.exists():
+            raise FileNotFoundError(f"CSV directory not found: {self.csv_dir}")
+
+        frames: List[pd.DataFrame] = []
+        for csv_file in sorted(self.csv_dir.glob("*.csv")):
+            logging.info("Loading backtest CSV %s", csv_file)
+            frames.append(pd.read_csv(csv_file))
+
+        if not frames:
+            raise FileNotFoundError(f"No CSV files located in {self.csv_dir}")
+
+        dataframe = pd.concat(frames, ignore_index=True)
+        return self._standardize_dataframe(dataframe)
+
+    def _load_mock(self) -> pd.DataFrame:
+        """Load synthetic data for testing/offline usage."""
+        mock_file = self.mock_dir / "test_data.json"
+        if mock_file.exists():
+            logging.info("Loading mock backtest data from %s", mock_file)
+            with open(mock_file) as f:
+                payload = json.load(f)
+        else:
+            logging.info("Mock file missing, generating synthetic dataset")
+            payload = self._generate_mock_payload()
+
+        dataframe = pd.DataFrame(payload)
+        return self._standardize_dataframe(dataframe)
+
+    def _standardize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Normalize column names, types, and ordering."""
+        df = df.copy()
+        column_map = {
+            'time': 'timestamp',
+            'value_usd': 'usd_value',
+            'notional': 'usd_value',
+            'amount': 'quantity'
+        }
+        df.rename(columns=column_map, inplace=True)
+
+        if 'timestamp' not in df.columns:
+            raise ValueError("Dataset missing mandatory 'timestamp' column")
+
+        # Convert timestamps to epoch seconds
+        if not np.issubdtype(df['timestamp'].dtype, np.number):
+            ts = pd.to_datetime(df['timestamp'], errors='coerce', utc=True)
+            if ts.isna().all():
+                raise ValueError("Unable to parse timestamps in dataset")
+            df['timestamp'] = ts.view('int64') / 1_000_000_000
+
+        df['side'] = df['side'].str.lower()
+
+        missing = [col for col in self.REQUIRED_COLUMNS if col not in df.columns]
+        if missing:
+            raise ValueError(f"Dataset missing required fields: {', '.join(missing)}")
+
+        standardized = df[self.REQUIRED_COLUMNS].dropna().copy()
+        standardized.sort_values('timestamp', inplace=True)
+        standardized.reset_index(drop=True, inplace=True)
+        return standardized
+
+    def _generate_mock_payload(self, rows: int = 720) -> List[Dict[str, Any]]:
+        """Generate deterministic synthetic data for tests."""
+        base_time = time.time()
+        data = []
+        for idx in range(rows):
+            timestamp = base_time - idx * 60  # 1-minute intervals
+            price = 40000 + np.random.randn() * 500
+            quantity = max(np.random.exponential(0.5), 0.01)
+            usd_value = price * quantity
+            data.append({
+                'timestamp': timestamp,
+                'exchange': np.random.choice(['binance', 'bybit', 'okx']),
+                'symbol': 'BTCUSDT',
+                'side': np.random.choice(['long', 'short']),
+                'quantity': quantity,
+                'usd_value': usd_value,
+                'price': price
+            })
+        return data
+
+
+
 # Example usage
-async def run_comprehensive_backtest():
+async def run_comprehensive_backtest(
+    source: str = 'timescale',
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    symbols: Optional[List[str]] = None,
+    export_path: str = 'backtest_results.json'
+) -> Tuple[BacktestResult, Dict[str, Any]]:
     """
     Complete backtest workflow
     """
-    backtester = CascadeBacktester()
+    framework = BacktestingFramework()
+    backtester = framework.backtester
 
     # Load historical data (simplified - you'd load from database)
     print("📚 Loading historical liquidation data...")
+    try:
+        sample_data = await framework.load_data(source=source, start_date=start_date, end_date=end_date)
+    except Exception as exc:
+        logging.warning("Falling back to mock dataset (%s)", exc)
+        sample_data = await framework.load_data(source='mock')
 
-    # Create sample data for demonstration
-    sample_data = pd.DataFrame({
-        'timestamp': [time.time() - i*60 for i in range(1000)],
-        'exchange': ['binance'] * 1000,
-        'symbol': ['BTCUSDT'] * 1000,
-        'side': np.random.choice(['long', 'short'], 1000),
-        'quantity': np.random.exponential(1, 1000),
-        'usd_value': np.random.exponential(10000, 1000),
-        'price': 40000 + np.random.randn(1000) * 1000
-    })
+    if symbols:
+        sample_data = sample_data[sample_data['symbol'].isin(symbols)]
+        if sample_data.empty:
+            raise ValueError(f"No records found for requested symbols: {', '.join(symbols)}")
+
+    print(f"   • Source: {source}")
+    print(f"   • Rows loaded: {len(sample_data):,}")
+    if symbols:
+        print(f"   • Symbols: {', '.join(symbols)}")
+    if start_date and end_date:
+        print(f"   • Range: {start_date.isoformat()} → {end_date.isoformat()}")
 
     # Run detection backtest
     print("\n🔬 Running detection backtest...")
@@ -395,14 +605,14 @@ async def run_comprehensive_backtest():
     print(report)
 
     # Save results
-    with open('backtest_results.json', 'w') as f:
+    with open(export_path, 'w') as f:
         json.dump({
             'detection': asdict(detection_result),
             'trading': trading_result,
             'report': report
         }, f, indent=2)
 
-    print("\n✅ Backtest complete! Results saved to backtest_results.json")
+    print(f"\n✅ Backtest complete! Results saved to {export_path}")
 
     return detection_result, trading_result
 

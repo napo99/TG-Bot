@@ -70,7 +70,7 @@ class EnhancedLiquidationSystem:
         logger.info("Setting up components...")
 
         # Initialize Redis
-        self.redis_client = await redis.from_url(self.redis_url)
+        self.redis_client = redis.from_url(self.redis_url)
         await self.redis_client.ping()
         logger.info("✅ Redis connection established")
 

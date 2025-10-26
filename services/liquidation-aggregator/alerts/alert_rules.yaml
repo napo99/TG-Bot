@@ -1,0 +1,115 @@
+groups:
+  - name: liquidation_cascade
+    interval: 15s
+    rules:
+      - alert: HighCascadeRisk
+        expr: cascade_risk_score > 1.0
+        for: 30s
+        labels:
+          severity: warning
+          team: trading-ops
+        annotations:
+          summary: "Cascade risk elevated ({{ $value }})."
+          description: "Cascade risk score breached warning threshold for {{ $labels.symbol }}."
+
+      - alert: CriticalCascade
+        expr: cascade_risk_score > 1.5
+        for: 10s
+        labels:
+          severity: critical
+          team: trading-ops
+        annotations:
+          summary: "Critical cascade risk detected ({{ $value }})."
+          description: "Immediate action required for {{ $labels.symbol }}."
+
+      - alert: VelocitySpike
+        expr: price_velocity > 0.001
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Velocity spike detected ({{ $value }})."
+          description: "Price velocity for {{ $labels.symbol }} exceeded warning threshold."
+
+      - alert: CriticalVelocitySpike
+        expr: price_velocity > 0.005
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical velocity spike detected ({{ $value }})."
+          description: "Price velocity for {{ $labels.symbol }} exceeded critical threshold."
+
+      - alert: VolumeSurge
+        expr: increase(liquidation_volume_usd[1m]) > 1000000
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Liquidation volume surge ({{ $value }} USD)."
+          description: "Liquidation volume exceeded $1M in 60 seconds for {{ $labels.symbol }}."
+
+      - alert: CriticalVolumeSurge
+        expr: increase(liquidation_volume_usd[1m]) > 5000000
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Major liquidation volume surge ({{ $value }} USD)."
+          description: "Liquidation volume exceeded $5M in 60 seconds for {{ $labels.symbol }}."
+
+      - alert: ConnectionHealthWarning
+        expr: rate(websocket_reconnect_total[5m]) > 2
+        for: 5m
+        labels:
+          severity: warning
+          component: websocket
+        annotations:
+          summary: "Elevated reconnection rate."
+          description: "Websocket reconnections above warning threshold ({{ $value }} per minute)."
+
+      - alert: ConnectionHealthCritical
+        expr: rate(websocket_reconnect_total[5m]) > 5
+        for: 2m
+        labels:
+          severity: critical
+          component: websocket
+        annotations:
+          summary: "Critical reconnection rate."
+          description: "Websocket reconnections above critical threshold ({{ $value }} per minute)."
+
+      - alert: ElevatedLatency
+        expr: histogram_quantile(0.95, sum(rate(request_latency_seconds_bucket[5m])) by (le)) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Service latency above 500ms."
+          description: "95th percentile request latency exceeded warning threshold."
+
+      - alert: CriticalLatency
+        expr: histogram_quantile(0.95, sum(rate(request_latency_seconds_bucket[5m])) by (le)) > 2
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service latency above 2s."
+          description: "95th percentile request latency exceeded critical threshold."
+
+      - alert: ErrorRateWarning
+        expr: rate(service_errors_total[5m]) / rate(service_requests_total[5m]) > 0.01
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Error rate elevated ({{ $value }})."
+          description: "Service error rate surpassed 1% over the last 5 minutes."
+
+      - alert: ErrorRateCritical
+        expr: rate(service_errors_total[5m]) / rate(service_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical error rate ({{ $value }})."
+          description: "Service error rate surpassed 5% over the last 5 minutes."

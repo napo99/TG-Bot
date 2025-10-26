@@ -30,13 +30,13 @@ import multiprocessing as mp
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
 # Import all system components
-from data_aggregator import DataAggregator
+from data_aggregator import LiquidationDataAggregator
 from enhanced_websocket_manager import EnhancedWebSocketManager
 from cascade_risk_calculator import CascadeRiskCalculator
 from cascade_signal_generator import CascadeSignalGenerator
 from market_regime_detector import MarketRegimeDetector
 from advanced_velocity_engine import AdvancedVelocityEngine
-from cex.cex_engine import CexEngine
+from cex.cex_engine import UnifiedCEXInterface
 from dex.hyperliquid_liquidation_provider import HyperliquidLiquidationProvider
 
 # Configure production logging
@@ -180,8 +180,10 @@ class UnifiedHyperEngine:
 
         try:
             # Initialize core components
-            self.components['data_aggregator'] = DataAggregator(
-                exchanges=['binance', 'okx', 'bybit', 'hyperliquid']
+            self.components['data_aggregator'] = LiquidationDataAggregator(
+                redis_host=os.getenv('REDIS_HOST', 'localhost'),
+                redis_port=int(os.getenv('REDIS_PORT', 6380)),
+                redis_db=int(os.getenv('REDIS_LIQ_DB', 1))
             )
 
             self.components['websocket_manager'] = EnhancedWebSocketManager()
@@ -198,8 +200,12 @@ class UnifiedHyperEngine:
             )
 
             # Initialize exchange engines
-            self.components['cex_engine'] = CexEngine()
+            self.components['cex_engine'] = UnifiedCEXInterface()
             self.components['dex_engine'] = HyperliquidLiquidationProvider()
+
+            # Perform async initialization for components that require it
+            if hasattr(self.components['cex_engine'], 'initialize'):
+                await self.components['cex_engine'].initialize()
 
             # Initialize component locks
             for name in self.components:

@@ -532,19 +532,17 @@ class BTCPriceFeed:
                 self.health.connection_attempts += 1
                 self.logger.info(f"Connecting to BTC price feed (attempt {attempt + 1})...")
 
-                # Add connection timeout
-                websocket = await asyncio.wait_for(
-                    websockets.connect(
-                        self.url,
-                        ping_interval=20,
-                        ping_timeout=10,
-                        close_timeout=10
-                    ),
-                    timeout=30
+                # Establish connection with explicit await so we can control lifetime
+                connection = websockets.connect(
+                    self.url,
+                    ping_interval=20,
+                    ping_timeout=10,
+                    close_timeout=10
                 )
 
-                async with websocket:
-                    self.websocket = websocket
+                websocket = await asyncio.wait_for(connection, timeout=30)
+                self.websocket = websocket
+                try:
                     self.health.update_connected()
                     self.circuit_breaker.record_success()
                     self.logger.info("✅ Connected to BTC price feed")
@@ -583,6 +581,9 @@ class BTCPriceFeed:
                         except Exception as e:
                             self.logger.error(f"Error processing BTC price: {e}")
                             self.health.error_count += 1
+                finally:
+                    self.websocket = None
+                    await websocket.close()
 
             except asyncio.TimeoutError:
                 self.logger.error("Connection timeout")
@@ -710,7 +711,7 @@ class EnhancedWebSocketManager:
         """Initialize Redis and velocity tracker"""
         try:
             # Connect to Redis
-            self.redis_client = await redis.Redis(**self.redis_config)
+            self.redis_client = redis.Redis(**self.redis_config)
             await self.redis_client.ping()
             logger.info("✅ Connected to Redis")
 

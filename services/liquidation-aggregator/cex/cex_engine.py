@@ -14,6 +14,7 @@ import uuid
 import logging
 import os
 from collections import deque
+from contextlib import suppress
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
 from typing import (
@@ -513,6 +514,133 @@ class AsyncDatabaseWriter:
         if self.db_pool:
             await self.db_pool.close()
             logging.info("Database connection pool closed")
+
+
+class UnifiedCEXInterface:
+    """
+    Lightweight facade that wires the core CEX ingestion components together.
+    Provides a simple async API for orchestrators (e.g. HyperEngine) to
+    initialize, process events, and collect health metrics without having to
+    manage the lower-level buffer/cache/database primitives directly.
+    """
+
+    def __init__(
+        self,
+        redis_client: Optional[redis.Redis] = None,
+        enable_database: bool = True
+    ) -> None:
+        self.redis: Optional[redis.Redis] = redis_client or redis.Redis(
+            host=REDIS_HOST,
+            port=REDIS_PORT,
+            db=REDIS_DB
+        )
+
+        self.buffer = InMemoryLiquidationBuffer()
+        self.cache: Optional[RedisLiquidationCache] = (
+            RedisLiquidationCache(self.redis) if self.redis else None
+        )
+        self.db_writer = AsyncDatabaseWriter() if enable_database else None
+        self._db_task: Optional[asyncio.Task] = None
+        self._initialized = False
+        self._enable_database = enable_database
+
+    async def initialize(self) -> None:
+        """Initialize downstream services (Redis ping, Timescale pool, etc.)."""
+        if self._initialized:
+            return
+
+        if self.redis:
+            try:
+                await self.redis.ping()
+                logging.info("✅ UnifiedCEXInterface connected to Redis")
+            except Exception as exc:
+                logging.warning(f"⚠️  Redis ping failed: {exc}")
+                self.cache = None
+
+        if self._enable_database and self.db_writer:
+            try:
+                await self.db_writer.init_db()
+                self._db_task = asyncio.create_task(self.db_writer.background_writer())
+            except Exception as exc:
+                logging.warning(f"⚠️  TimescaleDB initialization failed: {exc}")
+                self.db_writer = None
+
+        self._initialized = True
+
+    async def shutdown(self) -> None:
+        """Gracefully stop background tasks and close resources."""
+        if not self._initialized:
+            return
+
+        if self.db_writer:
+            self.db_writer.running = False
+            if self._db_task:
+                self._db_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await self._db_task
+            await self.db_writer.close()
+            self._db_task = None
+
+        if self.redis:
+            try:
+                await self.redis.close()
+            except Exception:
+                pass
+
+        self._initialized = False
+
+    async def handle_liquidation(
+        self,
+        event: LiquidationEvent,
+        cascade: Optional[CascadeEvent] = None
+    ) -> None:
+        """
+        Process a single liquidation event through all layers:
+        - In-memory buffer (Level 1)
+        - Redis aggregations (Level 2)
+        - Async TimescaleDB writer (Level 3)
+        """
+        self.buffer.add_event(event)
+
+        if self.cache:
+            await asyncio.gather(
+                self.cache.cache_price_level(event),
+                self.cache.cache_time_bucket(event)
+            )
+            if cascade:
+                await self.cache.set_cascade_status(cascade)
+
+        if self.db_writer:
+            cascade_id = cascade.cascade_id if cascade else None
+            risk_score = cascade.risk_score if cascade else None
+            self.db_writer.queue_event(event, cascade_id=cascade_id, risk_score=risk_score)
+
+    def get_recent_events(self, symbol: Symbol) -> List[LiquidationEvent]:
+        """Expose the last N events for a symbol (used by dashboards/tests)."""
+        buffer = self.buffer.buffers.get(symbol)
+        return list(buffer) if buffer else []
+
+    async def health_check(self) -> Dict[str, Any]:
+        """Return lightweight health metrics for monitoring."""
+        metrics: Dict[str, Any] = {
+            'events_buffered': self.buffer.processed_count,
+            'buffer_runtime_sec': round(time.time() - self.buffer.start_time, 2)
+        }
+
+        if self.db_writer:
+            metrics.update({
+                'db_queue_depth': self.db_writer.queue.qsize(),
+                'db_events_written': self.db_writer.written_count
+            })
+
+        if self.redis:
+            try:
+                await self.redis.ping()
+                metrics['redis_status'] = 'ok'
+            except Exception as exc:
+                metrics['redis_status'] = f'error: {exc}'
+
+        return metrics
 
 
 # Continue in next message due to length...

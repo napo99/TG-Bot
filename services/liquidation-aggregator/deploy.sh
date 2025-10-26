@@ -1,9 +1,7 @@
 #!/bin/bash
-"""
-Production Deployment Script for Liquidation Aggregator
-Author: Opus 4.1
-Date: October 25, 2025
-"""
+# Production Deployment Script for Liquidation Aggregator
+# Author: Opus 4.1
+# Date: October 25, 2025
 
 set -e  # Exit on any error
 set -u  # Exit on undefined variable

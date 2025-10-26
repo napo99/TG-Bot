@@ -231,7 +231,7 @@ class CascadeSignalGenerator:
         """Initialize Redis connection if not provided"""
         if not self.redis and redis_config:
             try:
-                self.redis = await redis.Redis(**redis_config)
+                self.redis = redis.Redis(**redis_config)
                 await self.redis.ping()
                 logger.info("✅ Connected to Redis")
             except Exception as e:
@@ -674,7 +674,7 @@ class SignalSubscriber:
         if channels is None:
             channels = [SIGNAL_CHANNEL, CRITICAL_SIGNAL_CHANNEL, ALERT_CHANNEL]
 
-        self.redis = await redis.Redis(**self.redis_config)
+        self.redis = redis.Redis(**self.redis_config)
         pubsub = self.redis.pubsub()
 
         await pubsub.subscribe(*channels)
@@ -744,7 +744,8 @@ async def example_usage():
         'db': REDIS_DB
     }
 
-    redis_client = await redis.Redis(**redis_config)
+    redis_client = redis.Redis(**redis_config)
+    await redis_client.ping()
 
     # Create signal generator
     generator = CascadeSignalGenerator(redis_client=redis_client)
