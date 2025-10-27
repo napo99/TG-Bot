@@ -4,7 +4,7 @@
 
 ## 📋 Overview
 
-Real-time liquidation tracking system with intelligent multi-level data storage:
+Real-time liquidation tracking system (currently BTCUSDT & ETHUSDT on Binance/Bybit) with intelligent multi-level data storage:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -156,6 +156,8 @@ python -m scripts.show_market_context --symbol BTCUSDT --once
 
 ## 🧠 Unified Open Interest Engine (October 2025 refresh)
 
+**Symbol coverage:** OI providers accept any base asset. The CLI helper ships with BTC pre-wired; import `UnifiedOIAggregator` to request ETH or others.
+
 The multi-exchange OI implementation has been consolidated under `src/core/exchanges`. Production wrappers remain in `services/market-data/` so existing tooling keeps working, but new integrations should import directly from the `core.exchanges` package.
 
 - **Library usage**
@@ -182,6 +184,8 @@ The multi-exchange OI implementation has been consolidated under `src/core/excha
 
 ## 💥 HyperLiquid Liquidation Monitor (Dynamic vault tracking)
 
+**Symbol coverage:** HyperLiquid provider matches whatever coins you pass in (default BTC). The professional monitor now tracks Binance/Bybit BTCUSDT & ETHUSDT plus any HyperLiquid coins you supply.
+
 HyperLiquid liquidations no longer rely on a single hard-coded wallet. The provider now watches the public trade feed and cross-references `userFills` from the HLP vault via the registry in `dex/hyperliquid_liquidation_registry.py`.
 
 - **Run the live dashboard**
@@ -202,6 +206,8 @@ HyperLiquid liquidations no longer rely on a single hard-coded wallet. The provi
 ---
 
 ## 🚀 Running the Aggregator
+
+**Supported symbols:** BTCUSDT & ETHUSDT on Binance/Bybit. Extend `TRACKED_SYMBOLS` if you add more pairs.
 
 ### **Start the Aggregator:**
 
