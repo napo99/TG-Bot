@@ -9,6 +9,7 @@ Usage:
 
 import asyncio
 import pprint
+import time
 
 from dex.hyperliquid_liquidation_registry import HyperLiquidLiquidationRegistry
 
@@ -20,6 +21,34 @@ async def main() -> None:
     snapshot = registry.snapshot()
     print("Registry snapshot:")
     pprint.pprint(snapshot)
+
+    if snapshot.get("vaults"):
+        print("\nPer-vault status:")
+        for vault in snapshot["vaults"]:
+            address = vault.get("address", "")
+            cached = vault.get("cached_fills", 0)
+            last_success = vault.get("last_success")
+            last_fill = vault.get("last_fill_epoch")
+            last_error = vault.get("last_error")
+
+            if last_fill:
+                age = max(0, time.time() - last_fill)
+                age_str = f"last fill {age:.0f}s ago"
+            else:
+                age_str = "no fills yet"
+
+            if last_error:
+                status = f"ERROR: {last_error}"
+            elif last_success:
+                status = age_str
+            else:
+                status = "initializing"
+
+            short_addr = f"{address[:6]}…{address[-4:]}" if len(address) > 10 else address
+            print(f"  - {short_addr}: {cached} fills ({status})")
+
+    if snapshot.get("all_vaults_stale"):
+        print("\n⚠️  Warning: all tracked vaults are stale. HyperLiquid might be rotating vaults or experiencing downtime.")
 
     fills = registry.recent_fills(limit=5)
     if not fills:

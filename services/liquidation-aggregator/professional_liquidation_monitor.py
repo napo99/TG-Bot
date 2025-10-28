@@ -20,7 +20,7 @@ from collections import deque, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Optional, Dict, List, Tuple, Any
+from typing import Optional, Dict, List, Tuple, Any, Deque
 
 import redis.asyncio as redis
 import numpy as np
@@ -40,6 +40,7 @@ from advanced_velocity_engine import AdvancedVelocityEngine, MultiTimeframeVeloc
 from cascade_risk_calculator import CascadeRiskCalculator
 from cascade_signal_generator import CascadeSignalGenerator, SignalLevel
 from market_regime_detector import MarketRegimeDetector, MarketRegime
+from market_data_aggregator import MarketDataAggregator, MarketContext
 
 # Configure logging
 logging.basicConfig(
@@ -220,12 +221,15 @@ class ProfessionalLiquidationMonitor:
         self.signal_generator: Optional[CascadeSignalGenerator] = None
         self.regime_detector: Optional[MarketRegimeDetector] = None
         self.redis_client: Optional[redis.Redis] = None
+        self.market_aggregator: Optional[MarketDataAggregator] = None
 
         # Display state
         self.exchange_activity: Dict[str, Dict[str, ExchangeActivity]] = defaultdict(dict)
         self.alert_buffer = deque(maxlen=10)  # Last 10 alerts
         self.cascade_risks: Dict[str, Tuple[float, SignalLevel, RiskAssessment]] = {}
         self.correlations: Dict[Tuple[str, str], float] = {}
+        self.event_history: Dict[str, Deque[Dict[str, Any]]] = defaultdict(lambda: deque(maxlen=1500))
+        self.recent_events: Deque[Dict[str, Any]] = deque(maxlen=120)
 
         # Performance tracking
         self.start_time = time.time()
@@ -238,12 +242,17 @@ class ProfessionalLiquidationMonitor:
         self.btc_change = 0
         self.current_regime: Optional[RegimeInfo] = None
         self.latest_liquidation: Optional[Dict[str, Any]] = None
+        self.market_context: Dict[str, MarketContext] = {}
+        self.market_context_updated: Dict[str, float] = {}
 
         # Terminal state
         self.running = False
         self.terminal_width = 120
         self.terminal_height = 40
         self.console = Console()
+        self.history_retention = 900  # seconds
+        self.context_refresh_seconds = 30.0
+        self.background_tasks: List[asyncio.Task] = []
 
         logger.info(f"Professional Monitor initialized for {len(symbols)} symbols on {len(exchanges)} exchanges")
 
@@ -267,6 +276,7 @@ class ProfessionalLiquidationMonitor:
         # Initialize Agent 3: Signal Generation
         self.signal_generator = CascadeSignalGenerator(redis_client=self.redis_client)
         self.regime_detector = MarketRegimeDetector()
+        self.market_aggregator = MarketDataAggregator()
 
         # Initialize Agent 1: Enhanced WebSocket Manager
         self.websocket_manager = EnhancedWebSocketManager(
@@ -301,12 +311,14 @@ class ProfessionalLiquidationMonitor:
 
         try:
             # Extract event data (handle CEX vs DEX formats)
-            symbol = event.symbol
-            exchange = getattr(event, 'exchange_name', getattr(event, 'exchange', 'UNKNOWN'))
-            side = getattr(event, 'side', 'UNKNOWN')
+            symbol = (event.symbol or "UNKNOWN").upper()
+            raw_exchange = getattr(event, 'exchange_name', getattr(event, 'exchange', 'UNKNOWN')) or "UNKNOWN"
+            exchange_key = raw_exchange.lower()
+            exchange_display = raw_exchange.upper()
+            side = (getattr(event, 'side', 'UNKNOWN') or 'UNKNOWN').upper()
 
             # Get USD value
-            value_usd = getattr(event, 'actual_value_usd', getattr(event, 'value_usd', 0))
+            value_usd = float(getattr(event, 'actual_value_usd', getattr(event, 'value_usd', 0)) or 0)
             price = getattr(event, 'price', 0)
             quantity = getattr(event, 'quantity', getattr(event, 'size', None))
             current_ts = time.time()
@@ -314,7 +326,7 @@ class ProfessionalLiquidationMonitor:
             # Track most recent liquidation for compact display
             self.latest_liquidation = {
                 'symbol': symbol,
-                'exchange': exchange,
+                'exchange': exchange_display,
                 'side': side,
                 'value_usd': value_usd,
                 'price': price,
@@ -322,14 +334,27 @@ class ProfessionalLiquidationMonitor:
                 'timestamp': current_ts,
             }
 
+            # Track rolling event history for dashboard analytics
+            event_record = {
+                'symbol': symbol,
+                'exchange': exchange_display,
+                'side': side,
+                'value': value_usd,
+                'price': price,
+                'timestamp': current_ts
+            }
+            history = self.event_history[symbol]
+            history.append(event_record)
+            self._trim_history(symbol, current_ts)
+            self.recent_events.appendleft(event_record)
+
             # Update exchange activity tracking
-            key = f"{exchange}:{symbol}"
             if symbol not in self.exchange_activity:
                 self.exchange_activity[symbol] = {}
 
-            if exchange not in self.exchange_activity[symbol]:
-                self.exchange_activity[symbol][exchange] = ExchangeActivity(
-                    exchange=exchange,
+            if exchange_key not in self.exchange_activity[symbol]:
+                self.exchange_activity[symbol][exchange_key] = ExchangeActivity(
+                    exchange=exchange_display,
                     symbol=symbol,
                     last_price=price,
                     last_side=side,
@@ -338,8 +363,8 @@ class ProfessionalLiquidationMonitor:
                     last_update=current_ts
                 )
             else:
-                activity = self.exchange_activity[symbol][exchange]
-                activity.last_price = price
+                activity = self.exchange_activity[symbol][exchange_key]
+                activity.last_price = price or activity.last_price
                 activity.last_side = side
                 activity.last_size = value_usd
                 activity.hour_volume += value_usd
@@ -347,7 +372,7 @@ class ProfessionalLiquidationMonitor:
                 activity.total_events += 1
 
             # Agent 2: Update velocity engine
-            self.velocity_engine.add_event(symbol, value_usd, exchange)
+            self.velocity_engine.add_event(symbol, value_usd, exchange_key)
 
             # Agent 2: Calculate velocity metrics (including jerk)
             metrics = self.velocity_engine.calculate_multi_timeframe_velocity(symbol)
@@ -393,7 +418,7 @@ class ProfessionalLiquidationMonitor:
                 if value_usd > 100000:
                     self.add_alert(
                         'INFO',
-                        f"INSTITUTIONAL - {exchange} {symbol} {side} ${value_usd/1000:.0f}K @ ${price:.2f}"
+                        f"INSTITUTIONAL - {exchange_display} {symbol} {side} ${value_usd/1000:.0f}K @ ${price:.2f}"
                     )
 
             # Update correlations periodically
@@ -450,6 +475,301 @@ class ProfessionalLiquidationMonitor:
             return "bold yellow"
         return "cyan"
 
+    def _trim_history(self, symbol: str, now: float) -> None:
+        """Remove stale events from tracking deque."""
+        history = self.event_history.get(symbol)
+        if not history:
+            return
+
+        while history and (now - history[0]['timestamp']) > self.history_retention:
+            history.popleft()
+
+    def _window_stats(self, window_seconds: int) -> Dict[str, Any]:
+        """Aggregate liquidation statistics for a rolling window."""
+        now = time.time()
+        totals: Dict[str, float] = {}
+        side_totals: Dict[str, float] = defaultdict(float)
+        active_symbols = 0
+        total_value = 0.0
+
+        for symbol, history in self.event_history.items():
+            symbol_total = 0.0
+            has_recent = False
+            for event in reversed(history):
+                age = now - event['timestamp']
+                if age > window_seconds:
+                    break
+                symbol_total += event['value']
+                side_totals[event['side']] += event['value']
+                if age <= 60:
+                    has_recent = True
+
+            if symbol_total > 0:
+                totals[symbol] = symbol_total
+                total_value += symbol_total
+                if has_recent:
+                    active_symbols += 1
+
+        return {
+            'total': total_value,
+            'per_symbol': totals,
+            'side_totals': side_totals,
+            'active_symbols': active_symbols,
+        }
+
+    def _recent_alert_count(self, window_seconds: float) -> int:
+        """Number of alerts emitted within the rolling window."""
+        now = time.time()
+        return sum(1 for alert in self.alert_buffer if now - alert.timestamp <= window_seconds)
+
+    @staticmethod
+    def _format_percent(value: float, precision: int = 1, show_sign: bool = True) -> str:
+        """Format a percentage with sensible defaults."""
+        sign = "+" if show_sign and value > 0 else ""
+        return f"{sign}{value:.{precision}f}%"
+
+    @staticmethod
+    def _format_age(seconds: float) -> str:
+        """Human readable age formatting."""
+        if seconds < 0.5:
+            return "<1s"
+        if seconds < 60:
+            return f"{seconds:.0f}s"
+        if seconds < 3600:
+            minutes = int(seconds // 60)
+            rem = int(seconds % 60)
+            return f"{minutes}m" if rem == 0 else f"{minutes}m{rem}s"
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        return f"{hours}h{minutes:02d}m"
+
+    def _get_market_context(self, symbol: str) -> Tuple[Optional[MarketContext], Optional[float]]:
+        """Return cached market context and age for a symbol."""
+        context = self.market_context.get(symbol)
+        updated_at = self.market_context_updated.get(symbol)
+        if not context or updated_at is None:
+            return None, None
+        return context, time.time() - updated_at
+
+    def _build_watchlist_table(
+        self,
+        now: float,
+        stats_1m: Dict[str, Any],
+        stats_5m: Dict[str, Any],
+    ) -> Table:
+        """Construct the high-impact watchlist table."""
+        table = Table(
+            show_header=True,
+            header_style="bold cyan",
+            expand=True,
+            padding=(0, 1),
+        )
+        table.add_column("SYM", justify="left", min_width=5)
+        table.add_column("LAST", justify="left", min_width=12)
+        table.add_column("1m Notional", justify="right", min_width=10)
+        table.add_column("5m Notional", justify="right", min_width=10)
+        table.add_column("Vel10s", justify="right", min_width=7)
+        table.add_column("Accel", justify="right", min_width=7)
+        table.add_column("Cascade", justify="left", min_width=12)
+        table.add_column("Age", justify="right", min_width=6)
+
+        per_symbol_1m = stats_1m['per_symbol']
+        per_symbol_5m = stats_5m['per_symbol']
+
+        ordered_symbols = sorted(
+            self.symbols,
+            key=lambda sym: per_symbol_5m.get(sym, 0.0),
+            reverse=True,
+        )
+
+        for symbol in ordered_symbols:
+            history = self.event_history.get(symbol)
+            last_event = history[-1] if history else None
+            age = now - last_event['timestamp'] if last_event else None
+
+            last_display = Text("—", style="dim")
+            if last_event:
+                side_style = "bold red" if last_event['side'] == 'LONG' else "bold green" if last_event['side'] == 'SHORT' else "white"
+                last_display = Text(
+                    f"{last_event['side']} {self._format_usd(last_event['value'])}",
+                    style=side_style
+                )
+
+            notional_1m = per_symbol_1m.get(symbol, 0.0)
+            notional_5m = per_symbol_5m.get(symbol, 0.0)
+
+            metrics = None
+            if self.velocity_engine:
+                try:
+                    metrics = self.velocity_engine.calculate_multi_timeframe_velocity(symbol)
+                except Exception:
+                    metrics = None
+
+            velocity = metrics.velocity_10s if metrics and metrics.velocity_10s is not None else 0.0
+            acceleration = metrics.acceleration if metrics and metrics.acceleration is not None else 0.0
+
+            cascade_info = self.cascade_risks.get(symbol)
+            if cascade_info:
+                probability, level, risk = cascade_info
+                cascade_text = Text(f"{probability:.0%} {level.name.title()}", style=self._signal_style(level))
+            else:
+                cascade_text = Text("—", style="dim")
+
+            age_text = Text(self._format_age(age), style="dim") if age is not None else Text("—", style="dim")
+
+            table.add_row(
+                symbol,
+                last_display,
+                Text(self._format_usd(notional_1m) if notional_1m else "—"),
+                Text(self._format_usd(notional_5m) if notional_5m else "—"),
+                Text(f"{velocity:.1f}"),
+                Text(f"{acceleration:+.1f}"),
+                cascade_text,
+                age_text,
+            )
+
+        return table
+
+    def _build_flow_panel(self, now: float) -> Panel:
+        """Render recent large liquidations."""
+        flow_table = Table(
+            show_header=True,
+            header_style="bold magenta",
+            expand=True,
+            padding=(0, 1),
+        )
+        flow_table.add_column("Time", style="dim", width=8)
+        flow_table.add_column("Symbol", width=8)
+        flow_table.add_column("Side", width=6)
+        flow_table.add_column("Notional", justify="right", min_width=10)
+        flow_table.add_column("Exchange", justify="left", min_width=9)
+
+        displayed = 0
+        for event in list(self.recent_events):
+            if displayed >= 5:
+                break
+            age = now - event['timestamp']
+            if age > 600:
+                continue
+            if event['value'] < 25_000:
+                continue
+            time_str = datetime.fromtimestamp(event['timestamp']).strftime('%H:%M:%S')
+            side_style = "bold red" if event['side'] == 'LONG' else "bold green" if event['side'] == 'SHORT' else "white"
+            flow_table.add_row(
+                time_str,
+                event['symbol'],
+                Text(event['side'], style=side_style),
+                self._format_usd(event['value']),
+                event['exchange'],
+            )
+            displayed += 1
+
+        if displayed == 0:
+            flow_table.add_row("-", "—", Text("—", style="dim"), "—", "—")
+
+        return Panel(flow_table, title="Flow Scanner", border_style="magenta", padding=(0, 1))
+
+    def _build_risk_checklist(self, now: float, context: Optional[MarketContext]) -> Panel:
+        """Build the trader checklist panel with actionable signals."""
+        checklist = Table.grid(padding=(0, 1))
+        checklist.add_column("Status", justify="left", width=2)
+        checklist.add_column("Signal", justify="left", min_width=20)
+        checklist.add_column("Detail", justify="left", min_width=20)
+
+        def row(label: str, condition: bool, detail: str) -> None:
+            icon = "🚨" if condition else "✅"
+            style = "bold red" if condition else "dim"
+            checklist.add_row(icon, Text(label, style=style), Text(detail))
+
+        # Velocity spike condition
+        velocity_spike = False
+        top_velocity = 0.0
+        for symbol in self.symbols:
+            if not self.velocity_engine:
+                continue
+            try:
+                metrics = self.velocity_engine.calculate_multi_timeframe_velocity(symbol)
+            except Exception:
+                continue
+            if metrics and metrics.velocity_10s:
+                top_velocity = max(top_velocity, metrics.velocity_10s)
+                if metrics.velocity_10s >= 8.0:
+                    velocity_spike = True
+
+        row(
+            "Velocity Spike",
+            velocity_spike,
+            f"Peak 10s velocity {top_velocity:.1f} evt/s",
+        )
+
+        cascade_active = any(
+            info[1].value >= SignalLevel.ALERT.value
+            for info in self.cascade_risks.values()
+        )
+        highest_prob = max((info[0] for info in self.cascade_risks.values()), default=0.0)
+        row(
+            "Cascade Watch",
+            cascade_active,
+            f"Top probability {highest_prob:.0%}",
+        )
+
+        if context:
+            depth_stress = context.depth_change_1m < -10
+            funding_bias = abs(context.funding_rate) > 0.05
+            oi_flush = context.oi_change_5m <= -5
+            row(
+                "Liquidity Stress",
+                depth_stress,
+                f"Depth Δ1m {self._format_percent(context.depth_change_1m)}",
+            )
+            row(
+                "Funding Imbalance",
+                funding_bias,
+                f"Funding {context.funding_rate:.4%}",
+            )
+            row(
+                "OI Shock",
+                oi_flush,
+                f"OI Δ5m {self._format_percent(context.oi_change_5m)}",
+            )
+        else:
+            row("Liquidity Stress", False, "Context warming up")
+            row("Funding Imbalance", False, "Context warming up")
+            row("OI Shock", False, "Context warming up")
+
+        regime_state = self.current_regime.state.upper() if self.current_regime else "UNKNOWN"
+        row(
+            "Market Regime",
+            self.current_regime is not None and self.current_regime.state in {"volatile", "bear"},
+            f"{regime_state} (confidence {self.current_regime.confidence:.2f})" if self.current_regime else "Awaiting data",
+        )
+
+        return Panel(checklist, title="Playbook Checklist", border_style="yellow", padding=(0, 1))
+
+    def _build_market_context_panel(self, symbol: str) -> Panel:
+        """Render OI and funding intelligence for a symbol."""
+        context, age = self._get_market_context(symbol)
+        table = Table.grid(padding=(0, 1))
+        table.add_column("Metric", justify="left", min_width=14)
+        table.add_column("Value", justify="left", min_width=18)
+
+        if not context:
+            table.add_row("Status", "Collecting data…")
+            return Panel(table, title=f"{symbol} Market Context", border_style="cyan", padding=(0, 1))
+
+        risk_score = self.market_aggregator.get_cascade_risk_score(context) if self.market_aggregator else 0.0
+
+        table.add_row("Open Interest", self._format_usd(context.open_interest_usd))
+        table.add_row("OI Δ5m", self._format_percent(context.oi_change_5m))
+        table.add_row("Funding", f"{context.funding_rate:.4%} ({context.funding_trend})")
+        table.add_row("Depth Δ1m", self._format_percent(context.depth_change_1m))
+        table.add_row("Premium", f"{context.premium:.3%}")
+        table.add_row("Risk Score", f"{risk_score:.0f}/100")
+        if age is not None:
+            table.add_row("Last Update", f"{self._format_age(age)} ago")
+
+        return Panel(table, title=f"{symbol} Market Context", border_style="cyan", padding=(0, 1))
+
     async def update_correlations(self) -> None:
         """
         Update cross-exchange correlations
@@ -477,6 +797,37 @@ class ProfessionalLiquidationMonitor:
                     self.btc_change = ((self.btc_price - old_price) / old_price) * 100
         except Exception as e:
             logger.error(f"Error updating BTC price: {e}")
+
+    async def price_update_loop(self) -> None:
+        """Continuously refresh BTC price for regime detection and display."""
+        if not self.redis_client:
+            return
+        while self.running:
+            try:
+                await self.update_btc_price()
+            except Exception as exc:
+                logger.debug(f"Price update loop error: {exc}")
+            await asyncio.sleep(2.0)
+
+    async def market_context_loop(self) -> None:
+        """Refresh market context (OI, funding, depth) for top symbols."""
+        if not self.market_aggregator:
+            return
+
+        symbols_to_track = self.symbols[:3] if self.symbols else ['BTCUSDT']
+
+        while self.running:
+            loop_start = time.time()
+            for symbol in symbols_to_track:
+                try:
+                    context = await self.market_aggregator.get_complete_context(symbol)
+                    self.market_context[symbol] = context
+                    self.market_context_updated[symbol] = time.time()
+                except Exception as exc:
+                    logger.debug(f"Market context fetch failed for {symbol}: {exc}")
+            # Respect refresh cadence
+            elapsed = time.time() - loop_start
+            await asyncio.sleep(max(5.0, self.context_refresh_seconds - elapsed))
 
     def clear_screen(self) -> None:
         """Clear terminal screen"""
@@ -761,106 +1112,86 @@ class ProfessionalLiquidationMonitor:
         """Construct a compact dashboard renderable for Rich Live output."""
         render_start = time.perf_counter()
         now = time.time()
+
         runtime = int(now - self.start_time)
         throughput = self.total_events / max(runtime, 1)
+        uptime_str = f"{runtime//60}m {runtime%60}s"
 
-        # Summary header
-        summary_text = Text()
-        summary_text.append("⚡ LIVE  ", style="bold green")
-        summary_text.append(f"Runtime {runtime}s   ")
-        summary_text.append(f"Events {self.total_events:,}   ")
-        summary_text.append(f"Throughput {throughput:.1f}/s", style="bold")
-        summary_panel = Panel(summary_text, border_style="cyan", padding=(0, 1))
+        stats_1m = self._window_stats(60)
+        stats_5m = self._window_stats(300)
+        long_notional = stats_5m['side_totals'].get('LONG', 0.0)
+        short_notional = stats_5m['side_totals'].get('SHORT', 0.0)
+        notional_total = long_notional + short_notional
+        bias_text = "—"
+        if notional_total:
+            long_share = long_notional / notional_total
+            short_share = short_notional / notional_total
+            bias_text = f"{long_share:.0%} L / {short_share:.0%} S"
 
-        # Latest liquidation panel
-        liq_text = Text()
-        if self.latest_liquidation:
-            symbol = self.latest_liquidation['symbol']
-            exchange = (self.latest_liquidation['exchange'] or '').upper()
-            side = (self.latest_liquidation['side'] or '').upper()
-            side_style = "bold red" if side == "LONG" else "bold green" if side == "SHORT" else "white"
-            value = self._format_usd(self.latest_liquidation['value_usd'])
-            price = self.latest_liquidation['price']
-            age = now - self.latest_liquidation['timestamp']
+        cascade_alerts = sum(
+            1 for _, level, _ in self.cascade_risks.values()
+            if level.value >= SignalLevel.ALERT.value
+        )
 
-            liq_text.append(f"{symbol} ", style="bold")
-            liq_text.append(f"{side} ", style=side_style)
-            liq_text.append(f"{value} ", style="bold white")
-            if price:
-                liq_text.append(f"@ ${price:,.0f}  ", style="dim")
-            liq_text.append(f"{exchange}  ", style="cyan")
-            liq_text.append(f"{age:.1f}s ago", style="dim")
-        else:
-            liq_text.append("Waiting for liquidations…", style="dim")
-        liq_panel = Panel(liq_text, title="Last Liquidation", border_style="magenta", padding=(0, 1))
+        summary_table = Table.grid(padding=(0, 1))
+        summary_table.add_column("Metric", justify="left", min_width=16)
+        summary_table.add_column("Value", justify="right", min_width=14)
+        summary_table.add_row("Runtime", uptime_str)
+        summary_table.add_row("Throughput", f"{throughput:.1f} evt/s")
+        summary_table.add_row("Events", f"{self.total_events:,}")
+        summary_table.add_row("5m Notional", self._format_usd(stats_5m['total']) if stats_5m['total'] else "—")
+        summary_table.add_row("1m Pace", self._format_usd(stats_1m['total']) if stats_1m['total'] else "—")
+        summary_table.add_row("Bias", bias_text)
+        summary_table.add_row("Active Symbols", str(stats_1m['active_symbols']))
+        summary_table.add_row("Cascade ≥ ALERT", f"{cascade_alerts}/{len(self.cascade_risks)}")
+        summary_table.add_row("Alerts (5m)", str(self._recent_alert_count(300)))
+        summary_panel = Panel(summary_table, title="Global Pulse", border_style="cyan", padding=(0, 1))
 
-        # Velocity panel (focus on 10s + 60s)
-        velocity_text = Text()
-        symbol_for_velocity = None
-        if 'BTCUSDT' in self.symbols:
-            symbol_for_velocity = 'BTCUSDT'
-        elif self.symbols:
-            symbol_for_velocity = self.symbols[0]
+        primary_symbol = 'BTCUSDT' if 'BTCUSDT' in self.symbols else (self.symbols[0] if self.symbols else 'BTCUSDT')
+        market_panel = self._build_market_context_panel(primary_symbol)
+        context, _ = self._get_market_context(primary_symbol)
 
-        metrics = None
-        if self.velocity_engine and symbol_for_velocity:
-            metrics = self.velocity_engine.calculate_multi_timeframe_velocity(symbol_for_velocity)
+        watchlist_panel = Panel(
+            self._build_watchlist_table(now, stats_1m, stats_5m),
+            title="High-Impact Watchlist",
+            border_style="bright_white",
+            padding=(0, 1),
+        )
 
-        if metrics:
-            velocity_text.append(f"{symbol_for_velocity}\n", style="bold")
-            velocity_text.append(f"10s {metrics.velocity_10s:.1f} evt/s  ", style="bold")
-            if metrics.acceleration is not None:
-                velocity_text.append(f"a {metrics.acceleration:+.1f} evt/s²  ", style="yellow")
-            if metrics.jerk is not None:
-                velocity_text.append(f"j {metrics.jerk:+.1f} evt/s³", style="yellow")
-            velocity_text.append(f"\n60s {metrics.velocity_60s:.1f} evt/s", style="dim")
-        else:
-            velocity_text.append("Waiting for data…", style="dim")
-        velocity_panel = Panel(velocity_text, title="Velocity", border_style="yellow", padding=(0, 1))
+        risk_panel = self._build_risk_checklist(now, context)
+        flow_panel = self._build_flow_panel(now)
 
-        # Cascade risk panel
-        cascade_text = Text()
-        if self.cascade_risks:
-            symbol, (probability, signal_level, risk_assessment) = max(
-                self.cascade_risks.items(), key=lambda item: item[1][0]
-            )
-            cascade_text.append(f"{symbol}: ", style="bold")
-            cascade_text.append(
-                f"{probability:.0%} {signal_level.name.title()}",
-                style=self._signal_style(signal_level)
-            )
-            cascade_text.append(f"\nScore {risk_assessment.risk_score:.1f}  ", style="bold white")
-            cascade_text.append(f"Action {risk_assessment.action}", style="cyan")
-        else:
-            cascade_text.append("No cascade risks detected", style="dim")
-        cascade_panel = Panel(cascade_text, title="Cascade Risk", border_style="red", padding=(0, 1))
+        alerts_table = Table.grid(padding=(0, 1))
+        alerts_table.add_column("Time", justify="left", style="dim", width=8)
+        alerts_table.add_column("Level", justify="left", width=10)
+        alerts_table.add_column("Message", justify="left", ratio=1)
 
-        # Alerts panel
-        alerts_text = Text()
-        recent_alerts = list(self.alert_buffer)[-3:]
+        recent_alerts = list(self.alert_buffer)[-5:]
         if recent_alerts:
             for alert in reversed(recent_alerts):
                 time_str = datetime.fromtimestamp(alert.timestamp).strftime('%H:%M:%S')
-                icon = '🚨' if alert.level == 'CRITICAL' else '⚡' if alert.level == 'WARNING' else '📊'
-                alerts_text.append(f"{time_str} {icon} {alert.message}\n", style=self._alert_style(alert.level))
+                level_text = Text(alert.level.title(), style=self._alert_style(alert.level))
+                alerts_table.add_row(time_str, level_text, alert.message)
         else:
-            alerts_text.append("No recent alerts", style="dim")
-        alerts_panel = Panel(alerts_text, title="Alerts", border_style="blue", padding=(0, 1))
+            alerts_table.add_row("—", Text("No Alerts", style="dim"), "System stable")
+
+        alerts_panel = Panel(alerts_table, title="Alert Stack", border_style="blue", padding=(0, 1))
 
         # Footer diagnostics
         avg_render = np.mean(self.render_times) * 1000 if self.render_times else 0
         redis_status = "[green]✓[/green]" if self.redis_client else "[red]✗[/red]"
         engine_status = "[green]✓[/green]" if self.velocity_engine else "[red]✗[/red]"
-        uptime = int(runtime)
-        uptime_str = f"{uptime//60}m {uptime%60}s"
         footer_text = Text.from_markup(
-            f"Latency {avg_render:.1f}ms  Redis {redis_status}  Cascade {engine_status}  "
-            f"Signals {len(self.cascade_risks)}  Uptime {uptime_str}"
+            f"Latency {avg_render:.1f}ms  Redis {redis_status}  Cascade Engine {engine_status}  "
+            f"Symbols {len(self.symbols)}  Uptime {uptime_str}"
         )
         footer_panel = Panel(footer_text, border_style="grey37", padding=(0, 1))
 
-        columns = Columns([liq_panel, velocity_panel, cascade_panel], equal=True, expand=True, padding=(0, 1))
-        group = Group(summary_panel, columns, alerts_panel, footer_panel)
+        top_row = Columns([summary_panel, market_panel], equal=True, expand=True, padding=(0, 1))
+        middle_row = Columns([watchlist_panel, risk_panel], equal=True, expand=True, padding=(0, 1))
+        bottom_row = Columns([flow_panel, alerts_panel], equal=True, expand=True, padding=(0, 1))
+
+        group = Group(top_row, middle_row, bottom_row, footer_panel)
 
         render_time = time.perf_counter() - render_start
         self.render_times.append(render_time)
@@ -924,21 +1255,38 @@ class ProfessionalLiquidationMonitor:
         logger.info("Starting Professional Liquidation Monitor...")
 
         self.running = True
+        tasks: List[asyncio.Task] = []
 
-        # Start WebSocket streams
-        websocket_task = asyncio.create_task(self.websocket_manager.start_all())
+        if self.websocket_manager:
+            tasks.append(asyncio.create_task(self.websocket_manager.start_all(), name="websocket-stream"))
 
-        # Start render loop
-        render_task = asyncio.create_task(self.render_loop())
+        tasks.append(asyncio.create_task(self.render_loop(), name="render-loop"))
 
-        # Wait for both
-        await asyncio.gather(websocket_task, render_task)
+        if self.redis_client:
+            tasks.append(asyncio.create_task(self.price_update_loop(), name="price-loop"))
+
+        if self.market_aggregator:
+            tasks.append(asyncio.create_task(self.market_context_loop(), name="context-loop"))
+
+        self.background_tasks = tasks
+
+        try:
+            await asyncio.gather(*tasks)
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
 
     async def stop(self) -> None:
         """Stop the monitor"""
         logger.info("Stopping Professional Liquidation Monitor...")
 
         self.running = False
+
+        for task in self.background_tasks:
+            task.cancel()
+
+        self.background_tasks.clear()
 
         if self.websocket_manager:
             await self.websocket_manager.stop_all()

@@ -1,61 +1,128 @@
-# HyperLiquid Liquidation Detection - Current Plan  
+# HyperLiquid Liquidation Detection – Dynamic Vault Discovery
 
-Some questions remain unanswered (e.g., why they don't crash it), but here's the real-world approach:
+HyperLiquid recently rotated away from the long-lived `0x2e3d…` liquidation
+vault. The old logic—polling that single account via `userFills`—quietly stopped
+seeing new trade ids, and every downstream monitor reported zero activity. The
+new pipeline discovers the active vault set automatically and keeps the
+registry healthy even when HyperLiquid rotates addresses mid-session.
 
-### 1. Hard-coded wallet is NOT enough
-- The single wallet (`0x2e3d…`), labeled “HLP Liquidator,” only holds capital; it doesn’t send every liquidation.
-- Live trade feed (`type="trades"`) shows dozens of different addresses executing liquidations. Most are sub-accounts or delegated agents to `0x162c…` (the master clearinghouse account).
-- "**Assumption:** HyperLiquid uses multiple agent addresses to execute the same logic, cycling addresses as needed."
+## 1. Vault discovery
 
-### 2. How to detect **all** liquidation events now
+1. **Discover candidates via `/info`**  
+   Every refresh first queries `POST /info` with `{"type":"vaults"}` and then
+   `{"type":"meta"}` as a fallback. The payloads contain one or more liquidation
+   vault addresses depending on the day. We walk the nested structures and
+   normalize any `0x…` strings into a deduplicated list.
 
-The initial plan relied on discovering the rotating liquidation agents via
-`extraAgents`. In practice, that endpoint now returns an empty list for the HLP
-vault and most active sub-accounts. We pivoted to a more reliable signal that
-is still publicly exposed: the vault's *fills*.
+2. **Fallback behaviour**  
+   If the public metadata endpoints fail or return nothing, we keep using the
+   last known vault list. When no prior list exists we fall back to the historic
+   HLP address (`0x2e3d…`) so the registry never fails completely.
 
-1. **Poll `userFills` for the HLP vault**:
-   - `POST /info` with `{"type":"userFills","user":"0x2e3d..."}` returns the most
-     recent liquidation fills executed by the vault, regardless of which agent
-     submitted them.
-   - Each fill includes a unique `tid`, `coin`, `dir` ("Close Long"/"Close Short"),
-     and price/size information.
+3. **Rotation support**  
+   Discovery runs at least once per minute (`DISCOVERY_INTERVAL`). When the API
+   advertises a new set, the registry starts polling those vaults immediately
+   and evicts caches for the ones that vanished. Consumers do not need to restart
+   to pick up the rotation.
+4. **Websocket-driven discovery**  
+   When the public metadata does not expose fresh vaults, the registry now probes
+   websocket participants on-demand. If a trade arrives with an unknown `tid`,
+   the participating addresses are treated as candidates: the registry fetches
+   their `userFills` once (with cooldowns) and, if liquidation records are found,
+   promotes the address to the active vault set. This keeps dashboards live even
+   when HyperLiquid rotates vaults without updating the metadata endpoint.
 
-2. **Watch the trade stream**:
-   - Subscribe to `{"method":"subscribe","subscription":{"type":"trades","coin":"<SYMBOL>"}}`.
-   - When a trade arrives, match its `tid` against the cached vault fills. If the
-     `tid` is present, classify it as a liquidation.
-   - Classification:
-     - `dir` contains `"Close Long"` → LONG liquidation (long forced to sell)
-     - `dir` contains `"Close Short"` → SHORT liquidation (short forced to buy)
+## 2. Multi-vault polling & cache merge
 
-3. **Keep the cache fresh**:
-   - Poll `userFills` every few seconds to keep a rolling window (500 entries by
-     default).
-   - If the response comes back empty or malformed, log an error and keep the
-     previous cache so the monitor degrades gracefully instead of flapping.
+* Each active vault is polled concurrently via `userFills`. The registry keeps a
+  per-vault cache (`VaultCache`) with metadata such as the last successful
+  refresh, last error, and latest fill timestamp.
+* Responses are filtered down to liquidation-only fills (direction string must
+  include “Close Long” / “Close Short”).
+* Successful results are merged into a single `tid → fill` lookup table.
+* Empty responses keep the previous cache in place—HyperLiquid occasionally
+  returns an empty array during quiet periods and we do not want to thrash the
+  downstream monitors.
 
-4. **Backfill/validation**:
-   - Periodically cross-check `userFills` against replayed websocket trades. If a
-     fill never appears in the live stream, trigger an alert—the websocket may be
-     lagging or filtered.
+## 3. Telemetry & stale detection
 
-### 3. Failure cases to monitor
-- **Agent rotation**: no longer a primary concern—the `userFills` approach is agent-agnostic.
-- **API endpoint change**: if `userFills` stops returning data, fail fast with logging and mark HyperLiquid ingestion as `DEGRADED`.
-- **Real-time speed bumps**: real-time stream gets behind. Cross-check by occasionally hitting `userFills` for the main agent and verifying the most recent fill timestamp is within ~60 seconds of current time.
-- **Protocol changes**: If HyperLiquid moves liquidations to a dedicated channel or adds a flag; we should watch release notes or set up canary monitors to detect format changes (e.g., new fields in `trade` messages).
+`HyperLiquidLiquidationRegistry.snapshot()` now returns:
 
-### 4. Implementation checklist (next steps)
-1. Build a small utility to fetch, cache, and periodically refresh the `userFills`
-   data. ✅ Implemented in `dex/hyperliquid_liquidation_registry.py`.
-2. Update `monitor_liquidations_live.py` (and the professional monitor) to use the
-   registry for detection. ✅ Live monitor and liquidation provider now share the registry.
-3. Add metrics/logging to alert when no liquidations are seen for X minutes while
-   `userFills` still reports new entries. ➡️ TODO (hook into monitoring once Grafana/alerts are scheduled).
-4. Document this flow in the README and schedule a manual verification every few weeks. ✅ This doc now reflects the current implementation.
+```json
+{
+  "cached_fills": 200,
+  "active_vaults": ["0xb83d…", "0xc6ac…"],
+  "vaults": [
+    {"address": "0xb83d…", "cached_fills": 120, "last_fill_epoch": 1716482134.2},
+    {"address": "0xc6ac…", "cached_fills": 80,  "last_error": null}
+  ],
+  "all_vaults_stale": false
+}
+```
 
-When the registry is running, the CLI displays real liquidation counts/values
-again. If `userFills` stops updating or returns inconsistent data, the monitor
-falls back to showing a warning so we can investigate before treating the feed
-as authoritative.
+If every tracked vault has gone more than five minutes without a new fill the
+registry raises `all_vaults_stale = True` and emits a log warning. The live
+terminal monitor displays the warning inline so operators know when HyperLiquid
+is rotating or degraded.
+
+## 4. Consumer updates
+
+* **`monitor_liquidations_live.py`** now prints per-vault health, including how
+  long ago each vault produced a fill and whether any request failed.
+* **`professional_liquidation_monitor.py`** consumes the refreshed stream via the
+  shared registry embedded in the HyperLiquid provider; telemetry is exposed via
+  the Global Pulse / Flow panes.
+* **`scripts/check_hyperliquid_registry.py`** prints a human-readable per-vault
+  status block, making smoke checks easy when rotating vaults are suspected.
+
+## 5. Verification checklist
+
+* Run the smoke script to inspect cache state:
+
+  ```bash
+  cd services/liquidation-aggregator
+  python -m scripts.check_hyperliquid_registry
+  ```
+
+* (Optional) Verify on-demand discovery by replaying a recent trade:
+
+  ```python
+  python - <<'PY'
+  import asyncio, aiohttp
+  from dex.hyperliquid_liquidation_registry import HyperLiquidLiquidationRegistry
+
+  async def main():
+      address = "0xc6ac58a7a63339898aeda32499a8238a46d88e84"
+      async with aiohttp.ClientSession() as session:
+          async with session.post('https://api.hyperliquid.xyz/info', json={'type': 'userFills', 'user': address}) as resp:
+              fill = next(f for f in await resp.json() if 'Close' in f.get('dir', ''))
+      registry = HyperLiquidLiquidationRegistry()
+      await registry.start()
+      await registry.classify_trade({**fill, 'users': [address]})
+      print(registry.active_vaults())
+      await registry.close()
+
+  asyncio.run(main())
+  PY
+  ```
+
+  The registry promotes the address to the active vault set on the first match.
+
+* Launch the lightweight live monitor and observe non-zero liquidation counts
+  during active hours:
+
+  ```bash
+  python monitor_liquidations_live.py
+  ```
+
+* Run the multi-exchange dashboard (Redis at `redis://localhost:6380/0`):
+
+  ```bash
+  python professional_liquidation_monitor.py --exchanges hyperliquid binance --symbols BTCUSDT ETHUSDT
+  ```
+
+* Automated coverage: `poetry run pytest services/liquidation-aggregator/tests/test_hyperliquid_liquidation_registry.py`
+
+With the dynamic registry in place, HyperLiquid rotations no longer cause the
+dashboards to flatline. The telemetry surfaces stale feeds quickly so operators
+can escalate if HyperLiquid experiences broader issues.

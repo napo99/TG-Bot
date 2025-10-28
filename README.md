@@ -29,3 +29,28 @@ A modular crypto trading assistant that integrates with Telegram for portfolio t
 ## Development
 
 Each service is independently deployable and testable.
+
+
+## HyperLiquid Liquidation Monitoring
+
+The liquidation aggregator now auto-discovers HyperLiquid liquidation vaults and
+keeps dashboards alive when the protocol rotates addresses. Operator entry
+points:
+
+```bash
+# Inspect registry health and per-vault status
+cd services/liquidation-aggregator
+python -m scripts.check_hyperliquid_registry
+
+# Run the lightweight live dashboard (requires Redis at redis://localhost:6380/0)
+python monitor_liquidations_live.py
+
+# Launch the professional multi-exchange view
+python professional_liquidation_monitor.py --exchanges hyperliquid binance --symbols BTCUSDT ETHUSDT
+
+# Execute automated coverage for the registry
+pytest services/liquidation-aggregator/tests/test_hyperliquid_liquidation_registry.py
+```
+
+See `docs/hyperliquid_liquidation_detection.md` for the full discovery workflow
+and operational notes.

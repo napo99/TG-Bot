@@ -147,10 +147,19 @@ python -m scripts.run_liquidation_monitor
 # Professional multi-exchange monitor (Redis defaults to 6380)
 python -m scripts.run_professional_monitor --symbols BTCUSDT ETHUSDT --exchanges binance hyperliquid
 # Add --full-dashboard to restore the legacy full-screen layout
-
-# Market context (open interest / funding snapshot)
-python -m scripts.show_market_context --symbol BTCUSDT --once
 ```
+
+The professional monitor now renders an institutional command center:
+- **Global Pulse** – five-minute liquidation notional, long/short balance, alert counts, and throughput.
+- **High-Impact Watchlist** – per-symbol 1m/5m notional, live velocity/acceleration, cascade probability, and last event age.
+- **Flow Scanner** – highlights the latest institutional prints (>$25K) across venues.
+- **Playbook Checklist** – fuses cascade analytics with funding, depth, and regime signals so operators can make fast go/no-go calls.
+
+```bash
+# Market context (open interest / funding command center)
+python -m scripts.show_market_context --symbol BTCUSDT --refresh 15
+```
+Use `--once` for a static snapshot. The dashboard surfaces open-interest deltas, funding extremes, depth evaporation, premium dislocations, and a risk checklist scored by the cascade risk model.
 
 ---
 

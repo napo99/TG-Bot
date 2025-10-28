@@ -144,6 +144,40 @@ class LiveLiquidationMonitor:
 
         print(f"{Colors.DIM}Registry cache: {cached_fills} fills | Last fill: {last_fill_str} ({age_str}){Colors.RESET}")
 
+        vaults = registry_stats.get("vaults", [])
+        if vaults:
+            vault_lines = []
+            for vault in vaults:
+                address = vault.get("address", "")
+                cached = vault.get("cached_fills", 0)
+                last_epoch = vault.get("last_fill_epoch") or 0
+                last_error = vault.get("last_error")
+                if last_epoch:
+                    vault_age = max(0, now.timestamp() - last_epoch)
+                    if vault_age < 60:
+                        color = Colors.GREEN
+                    elif vault_age < 180:
+                        color = Colors.YELLOW
+                    else:
+                        color = Colors.RED
+                    age_display = f"{vault_age:.0f}s"
+                else:
+                    color = Colors.DIM
+                    age_display = "n/a"
+
+                short_addr = f"{address[:6]}…{address[-4:]}" if len(address) > 10 else address
+                if last_error:
+                    color = Colors.RED
+                    age_display = "error"
+                vault_lines.append(
+                    f"{color}{short_addr}{Colors.RESET} {cached} fills ({age_display})"
+                )
+
+            print(f"{Colors.DIM}Vaults: {', '.join(vault_lines)}{Colors.RESET}")
+
+        if registry_stats.get("all_vaults_stale"):
+            print(f"{Colors.WARNING if hasattr(Colors, 'WARNING') else Colors.YELLOW}⚠️  All vault feeds stale — Hyperliquid may be rotating or degraded{Colors.RESET}")
+
         # Show top 5 most active coins with live prices
         print(f"\n{Colors.BOLD}📈 LIVE MARKET ACTIVITY:{Colors.RESET}")
         print(f"{'Coin':<8} {'Price':<12} {'Last Size':<10} {'Side':<6} {'1h Liq Vol':<12} {'Time':<8} {'Status'}")
