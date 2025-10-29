@@ -12,6 +12,7 @@
 - Cap subscriptions: `--max-coins 20` keeps feed lightweight.
 - Reduce registry load: `--registry-poll 6` backs the REST cadence off to six seconds.
 - Adjust UI cadence: `--refresh-interval 1.0` for a 1 Hz redraw.
+- Alert tape keeps the latest 20 liquidations ≥ $10K notional. Red `▲` entries are long liquidations (forced sells); green `▼` entries are short liquidations (forced buys). The price shown is the liquidation fill, so it can diverge slightly from the live price table.
 
 ## Follow-Up Items
 - [ ] Mirror the same Rich-pane quiet logging pattern inside `professional_liquidation_monitor.py`.

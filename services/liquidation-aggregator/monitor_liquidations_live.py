@@ -146,7 +146,7 @@ class LiveLiquidationMonitor:
         self.start_time = datetime.now()
         self.last_update_time = datetime.now()
         self.last_trade_count = 0
-        self.recent_alerts: deque = deque(maxlen=10)
+        self.recent_alerts: deque = deque(maxlen=20)
 
         # Rendering
         self.console = Console()
@@ -157,6 +157,7 @@ class LiveLiquidationMonitor:
         # Connection telemetry
         self.connection_state: str = "initializing"
         self.last_connection_error: Optional[str] = None
+        self.alert_min_notional: float = 10_000.0
 
     def format_usd(self, value):
         """Format USD values nicely"""
@@ -493,50 +494,74 @@ class LiveLiquidationMonitor:
                 Text("initializing", style="yellow"),
             )
 
-        meta = Table.grid(expand=True)
-        meta.add_column(justify="left")
-        meta.add_column(justify="right")
-        meta.add_row(
-            Text("Cached fills", style="dim"),
-            Text(str(stats.get("cached_fills", 0)), style="bold"),
+        meta_line_parts: List[Text] = []
+
+        cached_total = Text.assemble(
+            Text("Cached", style="dim"),
+            Text(f" {stats.get('cached_fills', 0)}", style="bold"),
+        )
+        meta_line_parts.append(cached_total)
+
+        active_vaults = len(stats.get("active_vaults", []))
+        meta_line_parts.append(
+            Text.assemble(Text("Active", style="dim"), Text(f" {active_vaults}", style="bold"))
+        )
+
+        meta_line_parts.append(
+            Text.assemble(
+                Text("Pool", style="dim"),
+                Text(f" {stats.get('candidate_pool', 0)}", style="bold"),
+            )
         )
 
         last_fill_epoch = stats.get("last_fill_epoch")
         if last_fill_epoch:
             age = max(0, now.timestamp() - last_fill_epoch)
-            meta.add_row(Text("Last registry fill", style="dim"), Text(self._format_seconds(age) + " ago", style="cyan"))
+            meta_line_parts.append(
+                Text.assemble(
+                    Text("Fill", style="dim"),
+                    Text(f" {self._format_seconds(age)}", style="cyan"),
+                )
+            )
         else:
-            meta.add_row(Text("Last registry fill", style="dim"), Text("none yet", style="yellow"))
-        meta.add_row(
-            Text("Active vaults", style="dim"),
-            Text(str(len(stats.get("active_vaults", []))), style="bold"),
-        )
-        meta.add_row(
-            Text("Candidate pool", style="dim"),
-            Text(str(stats.get("candidate_pool", 0)), style="bold"),
-        )
+            meta_line_parts.append(
+                Text.assemble(Text("Fill", style="dim"), Text(" none", style="yellow"))
+            )
+
         if stats.get("throttle_events_total"):
             last_throttle_ago = stats.get("last_throttle_ago")
             if last_throttle_ago is not None:
                 throttle_age = self._format_seconds(last_throttle_ago)
-                meta.add_row(
-                    Text("Last throttle", style="dim"),
-                    Text(f"{throttle_age} ago", style="yellow"),
+                meta_line_parts.append(
+                    Text.assemble(
+                        Text("Throttle", style="dim"),
+                        Text(f" {stats.get('throttle_events_total', 0)}", style="yellow"),
+                        Text(f" ({throttle_age})", style="yellow"),
+                    )
                 )
-            meta.add_row(
-                Text("Throttle events", style="dim"),
-                Text(str(stats.get("throttle_events_total", 0)), style="yellow"),
-            )
+            else:
+                meta_line_parts.append(
+                    Text.assemble(
+                        Text("Throttle", style="dim"),
+                        Text(f" {stats.get('throttle_events_total', 0)}", style="yellow"),
+                    )
+                )
 
         max_backoff = max(
             (float(vault.get("backoff_seconds") or 0.0) for vault in vaults),
             default=0.0,
         )
         if max_backoff > 0:
-            meta.add_row(
-                Text("Max backoff", style="dim"),
-                Text(self._format_seconds(max_backoff), style="dim"),
+            meta_line_parts.append(
+                Text.assemble(
+                    Text("Backoff", style="dim"),
+                    Text(f" {self._format_seconds(max_backoff)}", style="dim"),
+                )
             )
+
+        meta = Table.grid(expand=True, padding=(0, 0))
+        meta.add_column(justify="left")
+        meta.add_row(Text(" · ").join(meta_line_parts))
 
         extras: List[Text] = []
         failing = stats.get("failing_vaults") or {}
@@ -748,12 +773,13 @@ class LiveLiquidationMonitor:
             pad_edge=False,
         )
         table.add_column("Time", justify="left", no_wrap=True, width=8)
-        table.add_column("Market", justify="left", min_width=8)
-        table.add_column("Notional / Price", justify="right", min_width=12)
+        table.add_column("Market", justify="left", min_width=6, no_wrap=True)
+        table.add_column("Notional", justify="right", min_width=8, no_wrap=True)
+        table.add_column("Price", justify="right", min_width=10, no_wrap=True)
 
         alerts_list = list(self.recent_alerts)
         if alerts_list:
-            for alert in alerts_list[:10]:
+            for alert in alerts_list[:20]:
                 ts = datetime.fromtimestamp(alert["timestamp"]).strftime("%H:%M:%S")
                 side_style = "bold red" if alert["side"] == "LONG" else "bold green"
                 arrow = "▲" if alert["side"] == "LONG" else "▼"
@@ -764,14 +790,14 @@ class LiveLiquidationMonitor:
                 )
                 notional = self.format_usd_short(alert["value"])
                 price = self._format_price_compact(alert["price"])
-                detail_text = Text.assemble(
-                    Text(notional, style="bold"),
-                    Text("\n"),
-                    Text(price, style="dim"),
+                table.add_row(
+                    ts,
+                    market_text,
+                    notional,
+                    Text(price, style=side_style),
                 )
-                table.add_row(ts, market_text, detail_text)
         else:
-            table.add_row("—", Text("—", style="dim"), Text("—", style="dim"))
+            table.add_row("—", Text("—", style="dim"), "—", Text("—", style="dim"))
 
         return Panel(table, title="Recent Alerts", border_style="yellow", box=box.ROUNDED, padding=(0, 0))
 
@@ -907,11 +933,15 @@ class LiveLiquidationMonitor:
 
     def record_liquidation_alert(self, liq: Dict) -> None:
         """Store liquidation alert info for dashboard display."""
+        value = float(liq.get("value", 0.0) or 0.0)
+        if value < self.alert_min_notional:
+            return
+
         self.recent_alerts.appendleft({
             "coin": liq.get("coin", "?"),
             "side": liq.get("side", "UNK"),
             "price": liq.get("price", 0.0),
-            "value": liq.get("value", 0.0),
+            "value": value,
             "timestamp": liq.get("timestamp", datetime.now().timestamp()),
         })
         # Keep alerts sorted by recency (deque already ensures ordering)
@@ -920,7 +950,7 @@ class LiveLiquidationMonitor:
         direction = "LONG" if side == "LONG" else "SHORT"
         self.console.log(
             f"💥 {liq.get('coin')} {direction} liquidation "
-            f"{self.format_usd(liq.get('value', 0.0))} @ ${liq.get('price', 0.0):,.2f}"
+            f"{self.format_usd(value)} @ ${liq.get('price', 0.0):,.2f}"
         )
 
     async def _fetch_universe_snapshot(self) -> Tuple[List[str], List[str], List[Dict[str, Any]]]:
